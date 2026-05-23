@@ -63,6 +63,7 @@ kubestellar-status:
     GHOST_IP=192.168.1.102
     echo "=== KubeStellar Console ==="
     curl -sf "http://${GHOST_IP}:8090/" > /dev/null && echo " ✅ http://${GHOST_IP}:8090" || echo " ❌ not reachable"
+    curl -sfk "https://${GHOST_IP}:8443/" > /dev/null && echo " ✅ https://${GHOST_IP}:8443 (TLS via Caddy)" || echo " ℹ  TLS proxy optional (just tls-proxy-start) — plain http works"
     echo "=== Service status ==="
     ssh ${GHOST} "systemctl --user is-active kubestellar-agent.service kubestellar-console.service"
     echo "=== Cluster count ==="
@@ -139,6 +140,111 @@ dashboard-restart HOST="jorge@192.168.1.102":
 # View dashboard container logs on ghost
 dashboard-logs HOST="jorge@192.168.1.102":
     ssh {{HOST}} "podman logs -f bluespeed-dashboard"
+
+# ── TLS / mkcert ─────────────────────────────────────────────────────────────
+
+# One-time: generate mkcert CA + cert for ghost on ghost
+# Run this once, then import the CA into each browser with: just tls-export-ca
+tls-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST=jorge@192.168.1.102
+    ssh ${GHOST} "which mkcert || (curl -sLo /tmp/mkcert https://dl.filippo.io/mkcert/latest?for=linux/amd64 && chmod +x /tmp/mkcert && sudo mv /tmp/mkcert /usr/local/bin/mkcert)"
+    ssh ${GHOST} "mkcert -install; mkdir -p ~/certs && cd ~/certs && mkcert 192.168.1.102 ghost localhost 127.0.0.1"
+    @echo "✓ mkcert CA + cert generated. Run: just tls-export-ca"
+
+# Export the mkcert root CA to ~/Downloads so you can import it into browsers
+# Import: Firefox → Settings → Privacy & Security → View Certificates → Authorities → Import
+tls-export-ca:
+    #!/usr/bin/env bash
+    scp jorge@192.168.1.102:~/.local/share/mkcert/rootCA.pem ~/Downloads/ghost-mkcert-ca.pem
+    echo "✓ CA cert saved to ~/Downloads/ghost-mkcert-ca.pem"
+    echo "Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import"
+    echo "⚠ See https://github.com/projectbluefin/bluespeed/issues/36 for long-term TLS plan"
+
+# Start Caddy TLS proxy: ghost:8443 → KubeStellar console (requires mkcert cert)
+tls-proxy-start:
+    ssh jorge@192.168.1.102 "systemctl --user enable --now caddy-tls-proxy.service && systemctl --user is-active caddy-tls-proxy.service"
+    @echo "✓ TLS proxy: https://192.168.1.102:8443 → KubeStellar console"
+
+# Stop Caddy TLS proxy
+tls-proxy-stop:
+    ssh jorge@192.168.1.102 "systemctl --user stop caddy-tls-proxy.service"
+
+# Check TLS proxy status
+tls-proxy-status:
+    ssh jorge@192.168.1.102 "systemctl --user status caddy-tls-proxy.service --no-pager | tail -5"
+
+# ── KubeVirt ──────────────────────────────────────────────────────────────────
+
+# Install KubeVirt operator + CR into k3s on knuckle-1
+install-kubevirt:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    VERSION=$(curl -s https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
+    echo "→ Installing KubeVirt ${VERSION}..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-cr.yaml; sudo -E kubectl -n kubevirt wait kv kubevirt --for condition=Available --timeout=300s'"
+    echo "✓ KubeVirt ${VERSION} ready"
+
+# Install CDI (disk image import/clone) into k3s on knuckle-1
+install-cdi:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    VERSION=$(curl -sL https://api.github.com/repos/kubevirt/containerized-data-importer/releases/latest | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | head -1)
+    echo "→ Installing CDI ${VERSION}..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-cr.yaml; sudo -E kubectl -n cdi wait cdi cdi --for condition=Available --timeout=300s'"
+    echo "✓ CDI ${VERSION} ready"
+
+# Install KubeVirt Manager web UI — noVNC console at http://192.168.1.102:30180
+install-kubevirt-manager:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://raw.githubusercontent.com/kubevirt-manager/kubevirt-manager/main/kubernetes/bundled.yaml; sudo -E kubectl -n kubevirt-manager patch svc kubevirt-manager --type=merge --patch '"'"'{"spec":{"type":"NodePort","ports":[{"port":8080,"nodePort":30180}]}}'"'"''"
+    ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service"
+    @echo "✓ KubeVirt Manager → http://192.168.1.102:30180"
+
+# Start KubeVirt Manager socat proxy (ghost:30180 → knuckle-1:30180)
+kubevirt-manager-proxy-start:
+    ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service && systemctl --user is-active kubevirt-manager-proxy.service"
+    @echo "✓ KubeVirt Manager: http://192.168.1.102:30180"
+
+# Apply all Titan VM manifests (titan-dakota, titan-stable, titan-lts)
+install-titans:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f /tmp/titan-dakota.yaml; sudo -E kubectl apply -f /tmp/titan-stable.yaml; sudo -E kubectl apply -f /tmp/titan-lts.yaml'"
+    @echo "✓ Titan manifests applied — DataVolume import will begin"
+
+# Start a Titan VM
+# Usage: just titan-start dakota
+titan-start VARIANT:
+    ssh jorge@192.168.1.102 "ssh core@192.168.122.227 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo virtctl start titan-{{VARIANT}}'"
+
+# Stop a Titan VM
+titan-stop VARIANT:
+    ssh jorge@192.168.1.102 "ssh core@192.168.122.227 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo virtctl stop titan-{{VARIANT}}'"
+
+# Show all Titan VM status
+titan-status:
+    #!/usr/bin/env bash
+    KNUCKLE=core@192.168.122.227
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl get vms -A; echo; sudo -E kubectl get datavolumes -A'"
+    echo "UI: http://192.168.1.102:30180"
+
+# Open Titan noVNC console (visit KubeVirt Manager in any browser)
+titan-console VARIANT:
+    @echo "Open http://192.168.1.102:30180 → titan-{{VARIANT}} → Console tab"
+
+# KubeVirt full health check
+kubevirt-status:
+    #!/usr/bin/env bash
+    KNUCKLE=core@192.168.122.227
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl -n kubevirt get pods; echo; sudo -E kubectl -n cdi get pods; echo; sudo -E kubectl get vms -A 2>/dev/null || echo \"(no VMs yet)\"'"
+    echo "KubeVirt Manager: http://192.168.1.102:30180"
 
 # ── Argo Workflows ───────────────────────────────────────────────────────────
 
