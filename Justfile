@@ -42,6 +42,55 @@ otel-teardown HOST:
                   systemctl --user disable loki prometheus otelcol perses 2>/dev/null || true"
     @echo "✓ Observability stack stopped on {{HOST}}"
 
+# ── KubeStellar Console ─────────────────────────────────────────────────────
+
+# Install KubeStellar Console binaries on ghost and create systemd user services
+# Prereq: kubeconfig at /tmp/exo-knuckle-kubeconfig.yaml on ghost
+# Usage: just install-kubestellar-console
+install-kubestellar-console:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST=jorge@192.168.1.102
+    echo "→ Copying install script to ghost..."
+    scp kubestellar/install.sh ${GHOST}:/tmp/ks-install.sh
+    echo "→ Running install on ghost..."
+    ssh ${GHOST} "bash /tmp/ks-install.sh"
+
+# Check KubeStellar Console health on ghost
+kubestellar-status:
+    #!/usr/bin/env bash
+    GHOST=jorge@192.168.1.102
+    GHOST_IP=192.168.1.102
+    echo "=== KubeStellar Console ==="
+    curl -sf "http://${GHOST_IP}:8090/" > /dev/null && echo " ✅ http://${GHOST_IP}:8090" || echo " ❌ not reachable"
+    echo "=== Service status ==="
+    ssh ${GHOST} "systemctl --user is-active kubestellar-agent.service kubestellar-console.service"
+    echo "=== Cluster count ==="
+    ssh ${GHOST} "tail -3 ~/kubestellar-console/kc-agent.log | grep -o 'clusters:[0-9]*' || echo 'check log manually'"
+
+# Restart KubeStellar Console services on ghost
+kubestellar-restart:
+    ssh jorge@192.168.1.102 "systemctl --user restart kubestellar-agent.service kubestellar-console.service"
+    @echo "✓ KubeStellar Console restarted"
+
+# Tail KubeStellar Console logs on ghost
+kubestellar-logs:
+    ssh jorge@192.168.1.102 "journalctl --user -f -u kubestellar-agent -u kubestellar-console"
+
+# Rename knuckle-1 VM (requires shutdown — will disrupt k3s briefly)
+# Usage: just rename-vm OLD=exo-knuckle NEW=knuckle-1
+rename-vm OLD NEW:
+    #!/usr/bin/env bash
+    GHOST=jorge@192.168.1.102
+    echo "→ Shutting down {{OLD}}..."
+    ssh ${GHOST} "sudo virsh shutdown {{OLD}}"
+    sleep 15
+    ssh ${GHOST} "sudo virsh domrename {{OLD}} {{NEW}} && sudo virsh start {{NEW}}"
+    echo "→ Waiting for k3s to come back up..."
+    sleep 30
+    ssh ${GHOST} "ssh -o StrictHostKeyChecking=no core@192.168.122.227 '/opt/bin/k3s kubectl get nodes'"
+    @echo "✓ VM renamed {{OLD}} → {{NEW}}"
+
 # ── Full Stack ────────────────────────────────────────────────────────────────
 
 # Deploy everything: central node stack + agent on a second node
