@@ -1,0 +1,50 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: titan-lts-disk
+  namespace: default
+spec:
+  source:
+    registry:
+      url: "docker://ghcr.io/ublue-os/bluefin-lts:stable"
+      pullMethod: node
+  pvc:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: 50Gi
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: titan-lts
+  namespace: default
+  labels:
+    titan: "true"
+    variant: lts
+spec:
+  running: false
+  template:
+    spec:
+      domain:
+        cpu:
+          cores: 8
+          sockets: 1
+          threads: 1
+        memory:
+          guest: 16Gi
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: titan-lts-disk
