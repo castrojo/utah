@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guacamole-initdb
+  namespace: guacamole
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: generate-schema
+          image: guacamole/guacamole:1.5.5
+          command:
+            - /bin/sh
+            - -c
+            - /opt/guacamole/bin/initdb.sh --postgresql > /schema/initdb.sql
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+      containers:
+        - name: apply-schema
+          image: postgres:15-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h postgres.guacamole.svc.cluster.local -U guacamole_user; do
+                sleep 2
+              done
+              psql -h postgres.guacamole.svc.cluster.local \
+                   -U guacamole_user \
+                   -d guacamole_db \
+                   -f /schema/initdb.sql
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: guacamole-db-secret
+                  key: password
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+      volumes:
+        - name: schema
+          emptyDir: {}
