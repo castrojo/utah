@@ -12,15 +12,15 @@ These are non-negotiable. PRs that violate them will be closed.
 
 ### NO HELM
 
-Helm is not used anywhere in this project. No Helm charts, no helmfile, no Helm operator, no Helm-based install scripts. All workloads are deployed as raw Kubernetes manifests (`Deployment`, `ConfigMap`, `Service`, `PVC`, etc.) through the Bluespeed Raptor Control Center (KubeStellar WebUI). If an upstream project's official install method uses Helm, find the raw manifests or generate them once and commit them to the repo.
+Helm is not used anywhere in this project. No Helm charts, no helmfile, no Helm operator, no Helm-based install scripts. All workloads are deployed as raw Kubernetes manifests (`Deployment`, `ConfigMap`, `Service`, `PVC`, etc.) through the Ghost: Bluespeed dashboard (KubeStellar WebUI). If an upstream project's official install method uses Helm, find the raw manifests or generate them once and commit them to the repo.
 
 ### NO kubectl apply
 
-Contributors do not run `kubectl apply` directly. All workloads are deployed and managed through the **Bluespeed Raptor Control Center** (KubeStellar WebUI). Justfile recipes handle any cluster interaction that requires direct API access.
+Contributors do not run `kubectl apply` directly. All workloads are deployed and managed through the **Ghost: Bluespeed dashboard** (KubeStellar WebUI). Justfile recipes handle any cluster interaction that requires direct API access.
 
 ### Deployment Surface
 
-The **Bluespeed Raptor Control Center** (KubeStellar WebUI) is the single deployment surface for all stack components. Install it immediately after k3s. Everything else goes through it.
+The **Ghost: Bluespeed dashboard** (KubeStellar WebUI) is the single deployment surface for all stack components. Install it immediately after k3s. Everything else goes through it.
 
 ### k3s is the Kubernetes distribution
 
@@ -78,6 +78,10 @@ just otel-logs HOST=...     # tail service logs
 The stack is designed to be hardware-agnostic. To deploy on different hardware:
 - Update the `endpoint` in `otel/agent/otelcol-agent-config.yaml` to your central node IP
 - Run `just setup CENTRAL=user@your-ip NODE=user@your-node-ip`
+
+### Lore stays out of tech
+
+The Destiny/Exo lore used in community documentation and issue descriptions is **never reflected in technical artifacts**. k8s node names, hostnames, DNS records, config files, systemd units, and Justfile recipes follow standard Linux/k8s naming conventions only. The `exos/registry.yaml` file contains lore metadata (descriptions, community names) but technical systems reference only hostnames. Do not put Destiny references in code.
 
 ## Issues
 

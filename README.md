@@ -46,7 +46,7 @@ All CNCF projects. All reproducible. All deployed with `just`.
 | [Prometheus](https://prometheus.io/) | Graduated | Metrics storage |
 | [Loki](https://grafana.com/oss/loki/) | Grafana Labs OSS | Log aggregation |
 | [Perses](https://perses.dev/) | Sandbox | Dashboards |
-| [KubeStellar](https://kubestellar.io/) | Sandbox | Multi-cluster management — **Raptor Control Center** |
+| [KubeStellar](https://kubestellar.io/) | Sandbox | Multi-cluster management — **Ghost: Bluespeed dashboard** |
 | [KubeVirt](https://kubevirt.io/) | Incubating | VM management |
 
 ---
