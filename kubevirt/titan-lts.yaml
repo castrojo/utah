@@ -6,7 +6,7 @@ metadata:
 spec:
   source:
     registry:
-      url: "docker://ghcr.io/ublue-os/bluefin-lts:stable"
+      url: "docker://ghcr.io/ublue-os/bluefin:lts-hwe"
       pullMethod: node
   pvc:
     accessModes: [ReadWriteOnce]
