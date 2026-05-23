@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raptor Control Center — Bluespeed</title>
+  <style>
+    /* ── Variables ──────────────────────────────────────────────────────────── */
+    :root {
+      --bg:            #0a0a0a;
+      --surface:       #111827;
+      --surface2:      #1f2937;
+      --surface3:      #162032;
+      --border:        #2d3748;
+      --border-accent: #4338ca;
+      --accent:        #6366f1;
+      --accent2:       #818cf8;
+      --text:          #e2e8f0;
+      --text-dim:      #6b7280;
+      --text-bright:   #f9fafb;
+      --success:       #10b981;
+      --warning:       #f59e0b;
+      --danger:        #ef4444;
+      --cyan:          #22d3ee;
+      --cyan-dim:      #0891b2;
+      --purple:        #a78bfa;
+    }
+
+    /* ── Reset ──────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', ui-monospace, 'Cascadia Code', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #0d0d1a 0%, #1a1040 50%, #0d1a2e 100%);
+      border-bottom: 1px solid var(--border-accent);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left  { display: flex; align-items: center; gap: 14px; }
+    .header-logo  { font-size: 28px; line-height: 1; }
+
+    .header-wordmark {
+      display: flex;
+      flex-direction: column;
+    }
+    .header-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-bright);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    .header-sub {
+      font-size: 10px;
+      color: var(--accent2);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 10px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--success);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: live-pulse 2s ease-in-out infinite;
+    }
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--success); }
+      50%       { opacity: 0.3; box-shadow: none; }
+    }
+
+    .refresh-line { color: var(--text-dim); }
+    .refresh-line .val { color: var(--text); }
+    #countdown { color: var(--accent2); }
+
+    /* ── Dashboard grid ──────────────────────────────────────────────────────── */
+    .dashboard {
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 16px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+    .span-2 { grid-column: 1 / -1; }
+
+    /* ── Panel shell ─────────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, rgba(99,102,241,0.10) 0%, transparent 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .panel-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent2);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .panel-subtitle {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .panel-body { padding: 16px; }
+
+    /* ── Host spec line ───────────────────────────────────────────────────────── */
+    .host-spec {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .host-spec span { color: var(--text); }
+
+    /* ── Metric rows with progress bars ──────────────────────────────────────── */
+    .metric-row {
+      display: grid;
+      grid-template-columns: 72px 1fr 100px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 11px;
+    }
+    .metric-row:last-child { margin-bottom: 0; }
+
+    .metric-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .bar-track {
+      background: var(--surface2);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s cubic-bezier(.4,0,.2,1);
+      min-width: 2px;
+    }
+    .bar-ok   { background: linear-gradient(90deg, #059669, #10b981); }
+    .bar-warn { background: linear-gradient(90deg, #b45309, #f59e0b); }
+    .bar-crit { background: linear-gradient(90deg, #b91c1c, #ef4444); }
+
+    .metric-reading {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .metric-val  { color: var(--cyan);     font-size: 13px; font-weight: 700; }
+    .metric-unit { color: var(--text-dim); font-size: 10px; margin-left: 3px; }
+
+    /* ── Uptime row ──────────────────────────────────────────────────────────── */
+    .uptime-row {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .uptime-val  { color: var(--text-bright); font-size: 14px; font-weight: 700; }
+    .uptime-since { color: var(--text-dim); font-size: 10px; }
+
+    /* ── Cluster stat cards ──────────────────────────────────────────────────── */
+    .stat-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .stat-card-label {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 5px;
+    }
+    .stat-card-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--cyan);
+      line-height: 1;
+    }
+    .stat-card-val.small { font-size: 13px; margin-top: 3px; }
+
+    /* ── Node table ──────────────────────────────────────────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-table th {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 5px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid rgba(45,55,72,0.6);
+      vertical-align: middle;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: rgba(99,102,241,0.04); }
+
+    /* ── Status badge ────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+    .badge-green  { background: rgba(16,185,129,0.12);  color: var(--success); border: 1px solid rgba(16,185,129,0.25); }
+    .badge-red    { background: rgba(239,68,68,0.12);   color: var(--danger);  border: 1px solid rgba(239,68,68,0.25); }
+    .badge-blue   { background: rgba(99,102,241,0.12);  color: var(--accent2); border: 1px solid rgba(99,102,241,0.25); }
+    .badge-yellow { background: rgba(245,158,11,0.12);  color: var(--warning); border: 1px solid rgba(245,158,11,0.25); }
+
+    /* ── Tag chips ───────────────────────────────────────────────────────────── */
+    .chip {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 600;
+      background: rgba(99,102,241,0.15);
+      color: var(--accent2);
+      margin-right: 3px;
+    }
+
+    /* ── Exo panel header ────────────────────────────────────────────────────── */
+    .fleet-count-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .fleet-num {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--cyan);
+      line-height: 1;
+    }
+
+    /* ── Node name ───────────────────────────────────────────────────────────── */
+    .node-name {
+      color: var(--text-bright);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    /* ── Exo callsign ────────────────────────────────────────────────────────── */
+    .exo-callsign {
+      color: var(--text-bright);
+      font-size: 13px;
+      font-weight: 700;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+    }
+    .exo-desc { color: var(--text-dim); font-size: 11px; }
+
+    /* ── Collecting / error states ──────────────────────────────────────────── */
+    .collecting {
+      color: var(--text-dim);
+      font-size: 11px;
+      padding: 8px 0;
+    }
+    .collecting::after { content: ''; animation: ellipsis 1.5s steps(3, end) infinite; }
+    @keyframes ellipsis { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '...'; } 100% { content: '.'; } }
+
+    .warn-text { color: var(--warning); font-size: 11px; }
+
+    /* ── Timestamps ──────────────────────────────────────────────────────────── */
+    .ts { font-size: 9px; color: var(--text-dim); }
+
+    /* ── Stats.json staleness notice ─────────────────────────────────────────── */
+    .stale-notice {
+      font-size: 9px;
+      color: var(--text-dim);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ HEADER ═══════════════════════════════════ -->
+<header class="header">
+  <div class="header-left">
+    <span class="header-logo">🦖</span>
+    <div class="header-wordmark">
+      <div class="header-title">Raptor Control Center</div>
+      <div class="header-sub">Bluespeed · CNCF Homelab Factory</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+    <div class="refresh-line">
+      refresh in <span id="countdown">30</span>s &nbsp;·&nbsp;
+      updated <span id="last-updated" class="val">—</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════ DASHBOARD ════════════════════════════════ -->
+<div class="dashboard">
+
+  <!-- ─────────────────── PANEL 1: Physical Host ─────────────────────────── -->
+  <div class="panel" id="panel-host">
+    <div class="panel-header">
+      <span class="panel-title">⚡ Physical Host</span>
+      <span class="ts" id="host-ts">—</span>
+    </div>
+    <div class="panel-body">
+
+      <div class="host-spec">
+        <span>ghost</span> &nbsp;·&nbsp;
+        <span>192.168.1.102</span> &nbsp;·&nbsp;
+        Bluefin fc43 &nbsp;·&nbsp;
+        <span>32</span> cores &nbsp;·&nbsp;
+        <span>62 GiB</span> RAM
+      </div>
+
+      <!-- CPU load average -->
+      <div class="metric-row">
+        <span class="metric-label">CPU Load</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-ok" id="cpu-bar" style="width:0%"></div>
+        </div>
+        <div class="metric-reading">
+          <span class="metric-val" id="cpu-val">—</span>
+          <span class="metric-unit" id="cpu-unit">avg 1m</span>
+        </div>
+      </div>
+
+      <!-- RAM -->
+      <div class="metric-row">
+        <span class="metric-label">RAM</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-ok" id="ram-bar" style="width:0%"></div>
+        </div>
+        <div class="metric-reading">
+          <span class="metric-val" id="ram-val">—</span>
+          <span class="metric-unit" id="ram-pct"></span>
+        </div>
+      </div>
+
+      <!-- Disk /var -->
+      <div class="metric-row">
+        <span class="metric-label">Disk /var</span>
+        <div class="bar-track">
+          <div class="bar-fill bar-warn" id="disk-bar" style="width:0%"></div>
+        </div>
+        <div class="metric-reading">
+          <span class="metric-val" id="disk-val">—</span>
+          <span class="metric-unit" id="disk-pct"></span>
+        </div>
+      </div>
+
+      <!-- Uptime -->
+      <div class="uptime-row">
+        <div>
+          <div class="metric-label" style="margin-bottom:3px;">Uptime</div>
+          <span class="uptime-val" id="uptime-val">—</span>
+        </div>
+        <span class="uptime-since" id="uptime-since"></span>
+      </div>
+
+      <div class="stale-notice">
+        <span>Disk &amp; uptime from deploy-time snapshot</span>
+        <span id="stats-generated">—</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─────────────────── PANEL 2: Cluster Status ────────────────────────── -->
+  <div class="panel" id="panel-cluster">
+    <div class="panel-header">
+      <span class="panel-title">☸ Cluster</span>
+      <span class="ts" id="cluster-ts">—</span>
+    </div>
+    <div class="panel-body">
+
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-card-label">Nodes</div>
+          <div class="stat-card-val" id="c-nodes">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Running</div>
+          <div class="stat-card-val" id="c-running">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Total Pods</div>
+          <div class="stat-card-val" id="c-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">k3s</div>
+          <div class="stat-card-val small" id="c-version">—</div>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Node</th>
+            <th>Status</th>
+            <th>Roles</th>
+            <th>OS</th>
+            <th>Internal IP</th>
+          </tr>
+        </thead>
+        <tbody id="node-tbody">
+          <tr><td colspan="5"><span class="collecting">collecting data</span></td></tr>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+
+  <!-- ─────────────────── PANEL 3: Exo Robot Army ────────────────────────── -->
+  <div class="panel span-2" id="panel-exos">
+    <div class="panel-header">
+      <span class="panel-title">🤖 Exo Robot Army &nbsp;—&nbsp; Contributor Fleet</span>
+      <div class="fleet-count-badge">
+        Fleet total: <span class="fleet-num" id="fleet-total">—</span> registered
+      </div>
+    </div>
+    <div class="panel-body">
+
+      <table class="data-table" id="exo-table">
+        <thead>
+          <tr>
+            <th>Callsign</th>
+            <th>Status</th>
+            <th>Role</th>
+            <th>Description</th>
+            <th>Registered</th>
+          </tr>
+        </thead>
+        <tbody id="exo-tbody">
+          <tr><td colspan="5"><span class="collecting">collecting data</span></td></tr>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════ SCRIPT ═══════════════════════════════════ -->
+<script>
+// ─── Configuration ────────────────────────────────────────────────────────────
+const PROM_API    = '/api/prometheus/api/v1/query';   // nginx proxied — no CORS
+const REFRESH_SEC = 30;
+const GHOST_CORES = 32;
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let statsData   = null;   // from /stats.json (disk, uptime, k3s snapshot)
+let exoData     = null;   // from /exos.json
+let countdown   = REFRESH_SEC;
+let refreshTimer = null;
+
+// ─── Prometheus helper ───────────────────────────────────────────────────────
+async function promQuery(q) {
+  try {
+    const res = await fetch(`${PROM_API}?query=${encodeURIComponent(q)}`,
+      { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.data?.result ?? null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ─── Format helpers ──────────────────────────────────────────────────────────
+function fmtGiB(bytes) {
+  return (bytes / (1024 ** 3)).toFixed(1) + ' GiB';
+}
+
+function fmtUptime(secs) {
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
+function setTxt(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function setBar(barId, pct) {
+  const el = document.getElementById(barId);
+  if (!el) return;
+  const clamped = Math.min(Math.max(pct, 0), 100);
+  el.style.width = clamped + '%';
+  el.className = 'bar-fill ' + (clamped >= 90 ? 'bar-crit' : clamped >= 70 ? 'bar-warn' : 'bar-ok');
+}
+
+function badge(text, color) {
+  return `<span class="badge badge-${color}"><span class="badge-dot"></span>${text}</span>`;
+}
+
+function nowStr() {
+  return new Date().toLocaleTimeString();
+}
+
+// ─── Load /stats.json ────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await fetch('/stats.json?t=' + Date.now(),
+      { signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      statsData = await r.json();
+    }
+  } catch {
+    statsData = null;
+  }
+}
+
+// ─── Load /exos.json ─────────────────────────────────────────────────────────
+async function loadExos() {
+  if (exoData) return;  // only load once — static file
+  try {
+    const r = await fetch('/exos.json', { signal: AbortSignal.timeout(4000) });
+    if (r.ok) exoData = await r.json();
+  } catch {
+    exoData = null;
+  }
+}
+
+// ─── Panel 1: Physical Host ───────────────────────────────────────────────────
+async function updateHost() {
+  // CPU load average (OTel host receiver scrapes this)
+  const cpuRes = await promQuery('system_cpu_load_average_1m{host_name="ghost"}');
+  if (cpuRes && cpuRes.length > 0) {
+    const load = parseFloat(cpuRes[0].value[1]);
+    const pct  = (load / GHOST_CORES) * 100;
+    setTxt('cpu-val', load.toFixed(2));
+    setBar('cpu-bar', pct);
+  } else {
+    setTxt('cpu-val', 'N/A');
+    setTxt('cpu-unit', 'prom offline');
+  }
+
+  // RAM — sum all memory states, calc used %
+  const memRes = await promQuery('system_memory_usage_bytes{host_name="ghost"}');
+  if (memRes && memRes.length > 0) {
+    const byState = {};
+    for (const r of memRes) {
+      byState[r.metric.state] = parseFloat(r.value[1]);
+    }
+    const used  = byState['used'] || 0;
+    const free  = byState['free'] || 0;
+    const cache = (byState['cached'] || 0) + (byState['slab_reclaimable'] || 0);
+    const total = used + free + cache + (byState['buffered'] || 0) + (byState['slab_unreclaimable'] || 0);
+    const pct   = total > 0 ? (used / total) * 100 : 0;
+    setTxt('ram-val', fmtGiB(used));
+    setTxt('ram-pct', `${pct.toFixed(0)}%`);
+    setBar('ram-bar', pct);
+  } else {
+    setTxt('ram-val', 'N/A');
+  }
+
+  // Disk /var — from stats.json (df snapshot, updated at deploy time)
+  if (statsData) {
+    const pct = statsData.disk_var_used_pct || 0;
+    setTxt('disk-val', statsData.disk_var_used_label || '?');
+    setTxt('disk-pct', `${pct}%`);
+    setBar('disk-bar', pct);
+
+    // Uptime
+    if (statsData.uptime_seconds) {
+      setTxt('uptime-val', fmtUptime(statsData.uptime_seconds));
+      setTxt('uptime-since', `since ${statsData.boot_time || '?'}`);
+    }
+
+    // Generated timestamp
+    if (statsData.generated) {
+      const d = new Date(statsData.generated);
+      setTxt('stats-generated', 'snapshot: ' + d.toLocaleString());
+    }
+  } else {
+    setTxt('disk-val', 'offline');
+    setTxt('uptime-val', '—');
+  }
+
+  setTxt('host-ts', nowStr());
+}
+
+// ─── Panel 2: Cluster ────────────────────────────────────────────────────────
+async function updateCluster() {
+  if (!statsData) {
+    setTxt('cluster-ts', nowStr());
+    return;
+  }
+
+  const nodes   = statsData.k3s_nodes   || [];
+  const running = statsData.pods_running ?? '—';
+  const total   = statsData.pods_total   ?? '—';
+  const version = statsData.k3s_version  || '—';
+
+  setTxt('c-nodes',   nodes.length || '—');
+  setTxt('c-running', running);
+  setTxt('c-total',   total);
+  setTxt('c-version', version.replace('v','').split('+')[0] || version);
+
+  const tbody = document.getElementById('node-tbody');
+  if (!tbody) return;
+
+  if (nodes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5"><span class="warn-text">No nodes found — check kubeconfig on ghost</span></td></tr>`;
+  } else {
+    tbody.innerHTML = nodes.map(n => {
+      const ready   = (n.status || '').toLowerCase() === 'ready';
+      const roles   = (n.roles || []).map(r => `<span class="chip">${r}</span>`).join('');
+      const statusB = badge(n.status || '?', ready ? 'green' : 'red');
+      return `<tr>
+        <td><span class="node-name">${n.name}</span></td>
+        <td>${statusB}</td>
+        <td>${roles || '<span class="chip">worker</span>'}</td>
+        <td style="color:var(--text-dim); font-size:10px;">${n.os || '—'}</td>
+        <td style="color:var(--text-dim); font-size:11px;">${n.ip || '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  setTxt('cluster-ts', nowStr());
+}
+
+// ─── Panel 3: Exo Robot Army ──────────────────────────────────────────────────
+async function updateExos() {
+  if (!exoData || exoData.length === 0) {
+    setTxt('exo-tbody', '');
+    document.getElementById('exo-tbody').innerHTML =
+      `<tr><td colspan="5"><span class="warn-text">No exos registered — check /exos.json</span></td></tr>`;
+    setTxt('fleet-total', '0');
+    return;
+  }
+
+  // --- Online detection ---
+  // 1. k3s node names from stats.json
+  const k3sNodeNames = new Set(
+    (statsData?.k3s_nodes || []).map(n => n.name.toLowerCase())
+  );
+
+  // 2. Prometheus: which host_name labels have a recent metric (last 5m)?
+  const promRes = await promQuery('system_cpu_load_average_1m');
+  const promHosts = new Set();
+  if (promRes) {
+    for (const r of promRes) {
+      if (r.metric.host_name) promHosts.add(r.metric.host_name.toLowerCase());
+    }
+  }
+
+  // 3. Special rule: ghost itself is always online (serving this page)
+  promHosts.add('ghost');
+
+  // --- Build rows ---
+  let fleetTotal = 0;
+  const rows = exoData.map(exo => {
+    const n = exo.number || 1;
+    fleetTotal += n;
+    const label = `${exo.callsign.toUpperCase()}-${n}`;
+
+    // Determine online/offline
+    let online = false;
+    // Check Prometheus hostname
+    if (exo.prometheus_host) {
+      online = online || promHosts.has(exo.prometheus_host.toLowerCase());
+    }
+    // Check k3s node name
+    if (exo.k3s_node) {
+      online = online || k3sNodeNames.has(exo.k3s_node.toLowerCase());
+    }
+    // ghost is always online
+    if (exo.callsign.toLowerCase() === 'ghost') online = true;
+
+    const statusB = badge(online ? 'ONLINE' : 'OFFLINE', online ? 'green' : 'red');
+    const roleChip = `<span class="chip">${exo.role || '?'}</span>`;
+
+    return `<tr>
+      <td><span class="exo-callsign">${label}</span></td>
+      <td>${statusB}</td>
+      <td>${roleChip}</td>
+      <td><span class="exo-desc">${exo.description || '—'}</span></td>
+      <td style="color:var(--text-dim); font-size:10px;">${exo.registered || '—'}</td>
+    </tr>`;
+  });
+
+  document.getElementById('exo-tbody').innerHTML = rows.join('');
+  setTxt('fleet-total', fleetTotal);
+}
+
+// ─── Full refresh ─────────────────────────────────────────────────────────────
+async function refresh() {
+  // Load supporting data first (parallel)
+  await Promise.all([loadStats(), loadExos()]);
+
+  // Update all 3 panels (parallel — independent)
+  await Promise.all([updateHost(), updateCluster(), updateExos()]);
+
+  setTxt('last-updated', nowStr());
+}
+
+// ─── Countdown ticker ────────────────────────────────────────────────────────
+setInterval(() => {
+  countdown--;
+  setTxt('countdown', countdown);
+  if (countdown <= 0) {
+    countdown = REFRESH_SEC;
+    refresh();
+  }
+}, 1000);
+
+// ─── Initial load ─────────────────────────────────────────────────────────────
+refresh();
+</script>
+
+</body>
+</html>

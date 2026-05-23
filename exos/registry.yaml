@@ -1,30 +1,32 @@
-# Exo Fleet Registry — bluespeed contributor nodes
-# Format: callsign-N where N = number of times this node's fixes have been merged into Bluefin
-# Register your node with: just exo-register CALLSIGN=yourname
-# Increment your number with: just exo-reset CALLSIGN=yourname
-# Attribution (GitHub handle) is always opt-in — leave null for anonymous
+---
+# Bluespeed Exo Robot Army Registry
+# Each entry is a registered contributor node in the fleet.
+# callsign:       machine identifier (prefix)
+# number:         machine index in this callsign group
+# role:           node function in the fleet
+# prometheus_host: host_name label in Prometheus (OTel) — used for online/offline
+# k3s_node:       kubectl node name — used for cluster status
+# description:    human-readable description
+# registered:     ISO date added to fleet
 
 exos:
+  - callsign: ghost
+    number: 1
+    role: hub
+    prometheus_host: ghost
+    description: "Hub node — Bluefin workstation hosting k3s, observability stack, and Raptor Control Center"
+    registered: "2026-05-23"
+
   - callsign: knuckle
     number: 1
     role: k3s-cluster
-    host: ghost
-    description: "bluespeed primary k3s cluster — Flatcar VM on ghost"
+    k3s_node: knuckle-1
+    description: "Flatcar Linux VM — k3s v1.32 control-plane node (192.168.122.227)"
     registered: "2026-05-23"
-    attribution: null
 
-  - callsign: ghost
-    number: 7
-    role: hub
-    host: localhost
-    description: "bluespeed central server — Jorge's homelab (Bluefin DX)"
-    registered: "2026-05-23"
-    attribution: castrojo
-
-  - callsign: dakota
+  - callsign: exo-dakota
     number: 1
     role: build-node
-    host: 192.168.1.247
-    description: "bluespeed build node — NUC running Bluefin"
+    prometheus_host: bluefin
+    description: "NUC running bluefin-dakota — automated image build node (192.168.1.247)"
     registered: "2026-05-23"
-    attribution: null

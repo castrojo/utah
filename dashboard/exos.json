@@ -1,0 +1,26 @@
+[
+  {
+    "callsign": "ghost",
+    "number": 1,
+    "role": "hub",
+    "prometheus_host": "ghost",
+    "description": "Hub node — Bluefin workstation hosting k3s, observability stack, and Raptor Control Center",
+    "registered": "2026-05-23"
+  },
+  {
+    "callsign": "knuckle",
+    "number": 1,
+    "role": "k3s-cluster",
+    "k3s_node": "knuckle-1",
+    "description": "Flatcar Linux VM — k3s v1.32 control-plane node (192.168.122.227)",
+    "registered": "2026-05-23"
+  },
+  {
+    "callsign": "exo-dakota",
+    "number": 1,
+    "role": "build-node",
+    "prometheus_host": "bluefin",
+    "description": "NUC running bluefin-dakota — automated image build node (192.168.1.247)",
+    "registered": "2026-05-23"
+  }
+]

@@ -105,6 +105,41 @@ exo-reset CALLSIGN:
     @echo "→ Resetting {{CALLSIGN}} — opening PR to increment number"
     @echo "TODO: implement exo-reset"
 
+# ── Raptor Control Center Dashboard ─────────────────────────────────────────
+
+# Deploy Raptor Control Center dashboard to ghost (serves on :8091)
+# Usage: just serve-dashboard HOST=jorge@192.168.1.102
+serve-dashboard HOST="jorge@192.168.1.102":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST={{HOST}}
+    GHOST_IP=$(echo "{{HOST}}" | cut -d@ -f2)
+    echo "→ Syncing dashboard files to ${GHOST}..."	
+    rsync -av --delete dashboard/ ${GHOST}:~/bluespeed-dashboard/
+    rsync -av exos/registry.yaml ${GHOST}:~/bluespeed-dashboard/../exos/ 2>/dev/null || true
+    echo "→ Running serve.sh on ghost..."
+    ssh ${GHOST} "cd ~/bluespeed-dashboard && bash serve.sh"
+    echo ""
+    echo "🦖 Dashboard URL: http://${GHOST_IP}:8091"
+
+# Check dashboard status on ghost
+dashboard-status HOST="jorge@192.168.1.102":
+    #!/usr/bin/env bash
+    GHOST_IP=$(echo "{{HOST}}" | cut -d@ -f2)
+    echo "=== Dashboard ==="
+    curl -sf "http://${GHOST_IP}:8091/" > /dev/null && echo " ✅ http://${GHOST_IP}:8091" || echo " ❌ not reachable"
+    echo "=== Container ==="
+    ssh {{HOST}} "podman ps --filter name=bluespeed-dashboard --format 'Status: {{.Status}} | Image: {{.Image}}'" 2>/dev/null || echo " (ssh failed)"
+
+# Restart the dashboard container on ghost
+dashboard-restart HOST="jorge@192.168.1.102":
+    ssh {{HOST}} "podman restart bluespeed-dashboard"
+    @echo "✓ Dashboard restarted"
+
+# View dashboard container logs on ghost
+dashboard-logs HOST="jorge@192.168.1.102":
+    ssh {{HOST}} "podman logs -f bluespeed-dashboard"
+
 # ── Full Stack ────────────────────────────────────────────────────────────────
 
 # Deploy everything: central node stack + agent on a second node
