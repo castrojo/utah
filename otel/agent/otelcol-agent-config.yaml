@@ -1,0 +1,53 @@
+# OpenTelemetry Collector — node agent
+# CNCF Incubating — https://opentelemetry.io/
+#
+# Collects systemd journal logs and host metrics.
+# Forwards to the central aggregator on ghost (default: 192.168.1.102).
+#
+# To use: update the otlp exporter endpoint to your central node IP.
+
+receivers:
+  journald:
+    directory: /run/log/journal
+    priority: info
+    start_at: end
+
+  hostmetrics:
+    collection_interval: 30s
+    root_path: /hostfs
+    scrapers:
+      cpu: {}
+      memory: {}
+      disk: {}
+      filesystem:
+        exclude_mount_points:
+          mount_points: [/dev, /proc, /sys, /run/k3s]
+          match_type: strict
+      network: {}
+      load: {}
+
+processors:
+  batch:
+    timeout: 10s
+  resourcedetection:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+
+exporters:
+  otlp:
+    # Change this to your central node IP
+    endpoint: 192.168.1.102:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    logs:
+      receivers: [journald]
+      processors: [resourcedetection, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [hostmetrics]
+      processors: [resourcedetection, batch]
+      exporters: [otlp]

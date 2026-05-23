@@ -1,0 +1,19 @@
+[Unit]
+Description=Loki — log aggregation (CNCF Incubating)
+After=network-online.target observability-network.service
+
+[Container]
+Image=docker.io/grafana/loki:3.2.0
+ContainerName=loki
+Network=observability.network
+Volume=%h/bluespeed/otel/loki-data:/loki:z
+Volume=%h/bluespeed/otel/config/loki-config.yaml:/etc/loki/local-config.yaml:ro,z
+PublishPort=3100:3100
+Exec=-config.file=/etc/loki/local-config.yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

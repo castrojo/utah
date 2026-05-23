@@ -1,0 +1,15 @@
+# Perses — dashboard server
+# CNCF Sandbox — https://perses.dev/
+#
+# Datasources are provisioned via deploy.sh after startup.
+
+database:
+  file:
+    folder: "/perses/db"
+    extension: ".yaml"
+
+schemas:
+  panels_path: "/etc/perses/cue/schemas/panels"
+  queries_path: "/etc/perses/cue/schemas/queries"
+  datasources_path: "/etc/perses/cue/schemas/datasources"
+  variables_path: "/etc/perses/cue/schemas/variables"

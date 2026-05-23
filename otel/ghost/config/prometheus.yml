@@ -1,0 +1,15 @@
+# Prometheus — metrics storage
+# CNCF Graduated — https://prometheus.io/
+#
+# Remote write receiver enabled via --web.enable-remote-write-receiver flag.
+# OTel Collector pushes metrics here; no scrape configs needed for node agents.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # OTel Collector internal metrics
+  - job_name: 'otelcol'
+    static_configs:
+      - targets: ['otelcol:8888']
