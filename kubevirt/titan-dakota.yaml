@@ -32,7 +32,7 @@ spec:
           sockets: 1
           threads: 1
         memory:
-          guest: 16Gi
+          guest: 8Gi
         devices:
           autoattachGraphicsDevice: true
           disks:

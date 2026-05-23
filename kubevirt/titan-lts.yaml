@@ -5,14 +5,13 @@ metadata:
   namespace: default
 spec:
   source:
-    registry:
-      url: "docker://ghcr.io/ublue-os/bluefin:lts-hwe"
-      pullMethod: node
+    http:
+      url: "http://192.168.1.102:8590/image/disk.raw"
   pvc:
     accessModes: [ReadWriteOnce]
     resources:
       requests:
-        storage: 50Gi
+        storage: 20Gi
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -32,7 +31,7 @@ spec:
           sockets: 1
           threads: 1
         memory:
-          guest: 16Gi
+          guest: 8Gi
         devices:
           autoattachGraphicsDevice: true
           disks:
