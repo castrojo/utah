@@ -24,11 +24,13 @@ spec:
             - name: GUACD_PORT
               value: "4822"
             - name: POSTGRESQL_HOSTNAME
-              value: postgres.guacamole.svc.cluster.local
+              value: guacamole-db.guacamole.svc.cluster.local
             - name: POSTGRESQL_DATABASE
               value: guacamole_db
             - name: POSTGRESQL_USER
               value: guacamole_user
+            - name: POSTGRESQL_PORT
+              value: "5432"
             - name: POSTGRESQL_PASSWORD
               valueFrom:
                 secretKeyRef:
