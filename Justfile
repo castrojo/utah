@@ -230,22 +230,43 @@ install-titans:
 # Start a Titan VM
 # Usage: just titan-start dakota
 titan-start VARIANT:
-    ssh jorge@192.168.1.102 "ssh core@192.168.122.227 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo virtctl start titan-{{VARIANT}}'"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start titan-{{VARIANT}} -n default'"
+    echo "→ titan-{{VARIANT}} starting — watching VMI..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/titan-{{VARIANT}} --timeout=120s'" || true
+    echo "✓ Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
 
 # Stop a Titan VM
+# Usage: just titan-stop dakota
 titan-stop VARIANT:
-    ssh jorge@192.168.1.102 "ssh core@192.168.122.227 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo virtctl stop titan-{{VARIANT}}'"
+    #!/usr/bin/env bash
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-{{VARIANT}} -n default'"
+    echo "✓ titan-{{VARIANT}} stopped"
 
-# Show all Titan VM status
+# Status of all Titans
+# Usage: just titan-status
 titan-status:
     #!/usr/bin/env bash
-    KNUCKLE=core@192.168.122.227
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl get vms -A; echo; sudo -E kubectl get datavolumes -A'"
-    echo "UI: http://192.168.1.102:30180"
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    echo "=== Titan VMs ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l titan=true'"
+    echo "=== DataVolumes ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep titan || echo none'"
+    echo "=== kvnc-proxy pods ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l titan=true'"
+    echo "Console: http://192.168.1.102:30190/guacamole/"
 
-# Open Titan noVNC console (visit KubeVirt Manager in any browser)
+# Open Titan console via Guacamole
 titan-console VARIANT:
-    @echo "Open http://192.168.1.102:30180 → titan-{{VARIANT}} → Console tab"
+    @echo "Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
 
 # KubeVirt full health check
 kubevirt-status:
@@ -411,42 +432,6 @@ titan-create-dakota:
       sleep 15
     done
     echo "✓ titan-dakota-disk imported"
-
-# Start a Titan VM
-# Usage: just titan-start dakota
-titan-start-guac VARIANT:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start titan-{{VARIANT}} -n default'"
-    echo "→ titan-{{VARIANT}} starting — watching VMI..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/titan-{{VARIANT}} --timeout=120s'" || true
-    echo "✓ Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
-
-# Stop a Titan VM
-# Usage: just titan-stop dakota
-titan-stop-guac VARIANT:
-    #!/usr/bin/env bash
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-{{VARIANT}} -n default'"
-    echo "✓ titan-{{VARIANT}} stopped"
-
-# Status of all Titans
-# Usage: just titan-status
-titan-status-guac:
-    #!/usr/bin/env bash
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    echo "=== Titan VMs ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l titan=true'"
-    echo "=== DataVolumes ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep titan || echo none'"
-    echo "=== kvnc-proxy pods ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l titan=true'"
 
 # Re-provision titan-dakota from latest zot image
 # Usage: just titan-reprovision-dakota
