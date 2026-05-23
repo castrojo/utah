@@ -294,3 +294,198 @@ setup CENTRAL NODE:
     echo "   Perses (dashboards): http://${IP}:8082"
     echo "   Prometheus (metrics): http://${IP}:9090"
     echo "   Loki (logs):         http://${IP}:3100"
+
+# ── Guacamole Console ─────────────────────────────────────────────────────────
+
+# One-time: create the guacamole-db-secret in knuckle-1 (generates random password)
+# Usage: just create-guac-secret
+create-guac-secret:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    PASS=$(openssl rand -base64 20 | tr -dc 'a-zA-Z0-9' | head -c 24)
+    ssh ${GHOST} "ssh ${KNUCKLE1} \
+      '${KBC} create secret generic guacamole-db-secret \
+        -n guacamole \
+        --from-literal=password=${PASS} \
+        --dry-run=client -o yaml | ${KBC} apply -f -'"
+    echo "✓ guacamole-db-secret created (password stored in k8s secret only)"
+
+# Deploy full Guacamole stack: namespace → secret check → postgres → guacd → webapp → initdb
+# Usage: just install-guacamole
+install-guacamole:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    MANIFESTS=(
+      guacamole/namespace.yaml
+      guacamole/postgres.yaml
+      guacamole/guacd.yaml
+      guacamole/guacamole.yaml
+    )
+    echo "→ Uploading and applying Guacamole manifests..."
+    for f in "${MANIFESTS[@]}"; do
+      scp "$f" ${GHOST}:/tmp/$(basename $f)
+      ssh ${GHOST} "scp /tmp/$(basename $f) ${KNUCKLE1}:/tmp/ && \
+        ssh ${KNUCKLE1} '${KBC} apply -f /tmp/$(basename $f)'"
+    done
+    echo "→ Waiting for postgres to be ready..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/postgres -n guacamole --timeout=120s'"
+    echo "→ Running initdb job..."
+    scp guacamole/initdb-job.yaml ${GHOST}:/tmp/initdb-job.yaml
+    ssh ${GHOST} "scp /tmp/initdb-job.yaml ${KNUCKLE1}:/tmp/ && \
+      ssh ${KNUCKLE1} '${KBC} apply -f /tmp/initdb-job.yaml'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=complete job/guacamole-initdb -n guacamole --timeout=120s'"
+    echo "→ Waiting for guacamole webapp..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/guacamole -n guacamole --timeout=120s'"
+    echo "✓ Guacamole ready → http://192.168.1.102:30190/guacamole/"
+    echo "  Default login: guacadmin / guacadmin (change immediately)"
+
+# Check Guacamole stack status
+# Usage: just guacamole-status
+guacamole-status:
+    #!/usr/bin/env bash
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    GHOST_IP="192.168.1.102"
+    echo "=== Guacamole pods ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -n guacamole'"
+    echo "=== Web UI ==="
+    curl -sf --max-time 5 "http://${GHOST_IP}:30190/guacamole/" > /dev/null && \
+      echo " ✅ http://${GHOST_IP}:30190/guacamole/" || echo " ❌ not reachable"
+
+# ── Titan VM Fleet ─────────────────────────────────────────────────────────────
+
+# One-time: configure CDI to allow insecure pulls from ghost zot (192.168.1.102:5000)
+# Usage: just titan-cdi-patch
+titan-cdi-patch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    scp kubevirt/cdi-insecure-registry.yaml ${GHOST}:/tmp/cdi-insecure-registry.yaml
+    ssh ${GHOST} "scp /tmp/cdi-insecure-registry.yaml ${KNUCKLE1}:/tmp/ && \
+      ssh ${KNUCKLE1} '${KBC} apply -f /tmp/cdi-insecure-registry.yaml'"
+    echo "✓ CDI insecure registry configured for 192.168.1.102:5000"
+
+# One-time: deploy kvnc-proxy RBAC + titan-dakota VNC proxy
+# Usage: just titan-deploy-proxy
+titan-deploy-proxy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    for f in kvnc-proxy/rbac.yaml kvnc-proxy/titan-dakota-proxy.yaml; do
+      scp "$f" ${GHOST}:/tmp/$(basename $f)
+      ssh ${GHOST} "scp /tmp/$(basename $f) ${KNUCKLE1}:/tmp/ && \
+        ssh ${KNUCKLE1} '${KBC} apply -f /tmp/$(basename $f)'"
+    done
+    echo "✓ kvnc-proxy deployed — waiting for proxy pod..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/titan-dakota-vnc-proxy --timeout=120s'"
+    echo "✓ titan-dakota-vnc.default.svc.cluster.local:5900 ready"
+
+# Import titan-dakota disk from ghost zot (takes ~5-10 min)
+# Usage: just titan-create-dakota
+titan-create-dakota:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    scp kubevirt/titan-dakota.yaml ${GHOST}:/tmp/titan-dakota.yaml
+    ssh ${GHOST} "scp /tmp/titan-dakota.yaml ${KNUCKLE1}:/tmp/ && \
+      ssh ${KNUCKLE1} '${KBC} apply -f /tmp/titan-dakota.yaml'"
+    echo "→ DataVolume import started — polling status (may take 5-10 min)..."
+    while true; do
+      STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv titan-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
+      echo "  DataVolume: ${STATUS}"
+      [ "${STATUS}" = "Succeeded" ] && break
+      [ "${STATUS}" = "Failed" ] && echo "❌ Import failed" && exit 1
+      sleep 15
+    done
+    echo "✓ titan-dakota-disk imported"
+
+# Start a Titan VM
+# Usage: just titan-start dakota
+titan-start-guac VARIANT:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start titan-{{VARIANT}} -n default'"
+    echo "→ titan-{{VARIANT}} starting — watching VMI..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/titan-{{VARIANT}} --timeout=120s'" || true
+    echo "✓ Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
+
+# Stop a Titan VM
+# Usage: just titan-stop dakota
+titan-stop-guac VARIANT:
+    #!/usr/bin/env bash
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-{{VARIANT}} -n default'"
+    echo "✓ titan-{{VARIANT}} stopped"
+
+# Status of all Titans
+# Usage: just titan-status
+titan-status-guac:
+    #!/usr/bin/env bash
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    echo "=== Titan VMs ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l titan=true'"
+    echo "=== DataVolumes ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep titan || echo none'"
+    echo "=== kvnc-proxy pods ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l titan=true'"
+
+# Re-provision titan-dakota from latest zot image
+# Usage: just titan-reprovision-dakota
+titan-reprovision-dakota:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    KNUCKLE1="core@192.168.122.227"
+    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+    echo "→ Stopping titan-dakota..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-dakota -n default 2>/dev/null || true'"
+    sleep 5
+    echo "→ Deleting old DataVolume..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} delete dv titan-dakota-disk --ignore-not-found'"
+    echo "→ Re-importing from 192.168.1.102:5000/dakota:latest..."
+    just titan-create-dakota
+
+# Add persistent socat forward on ghost for Guacamole (port 30190 → knuckle-1:30190)
+# Usage: just ghost-add-guac-forward
+ghost-add-guac-forward:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST="jorge@192.168.1.102"
+    ssh ${GHOST} 'cat > /tmp/socat-guacamole.service << '"'"'SVCEOF'"'"'
+[Unit]
+Description=socat forward: ghost:30190 -> knuckle-1:30190 (Guacamole)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:30190,fork,reuseaddr TCP:192.168.122.227:30190
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+SVCEOF
+mkdir -p ~/.config/systemd/user
+mv /tmp/socat-guacamole.service ~/.config/systemd/user/socat-guacamole.service
+systemctl --user daemon-reload
+systemctl --user enable --now socat-guacamole.service
+systemctl --user is-active socat-guacamole.service'
+    echo "✓ ghost:30190 → 192.168.122.227:30190 forwarding active"
