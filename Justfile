@@ -56,23 +56,53 @@ install-kubestellar-console:
     echo "→ Running install on ghost..."
     ssh ${GHOST} "bash /tmp/ks-install.sh"
 
+# Configure nginx proxy for KubeStellar: serves HTTPS:8090, injects live-mode defaults into every page
+# Run after install-kubestellar-console. Sets demo mode OFF and user identity for all browsers.
+# USERNAME: linux username to show in the console top-right (default: jorge)
+configure-kubestellar-proxy USERNAME="jorge":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GHOST=jorge@192.168.1.102
+    GHOST_IP=192.168.1.102
+    LINUX_USER={{USERNAME}}
+    INIT_SCRIPT="localStorage.setItem(\\\"kc-demo-mode\\\",\\\"false\\\");if(!localStorage.getItem(\\\"kc-user-cache\\\"))localStorage.setItem(\\\"kc-user-cache\\\",JSON.stringify({id:\\\"local-${LINUX_USER}\\\",github_id:\\\"local-${LINUX_USER}\\\",github_login:\\\"${LINUX_USER}\\\",role:\\\"admin\\\",onboarded:true}));"
+    ssh ${GHOST} "mkdir -p ~/certs/nginx && cat > ~/certs/nginx/nginx.conf << NGINXEOF
+events {}
+http {
+    server {
+        listen 8090 ssl;
+        ssl_certificate     /certs/192.168.1.102+3.pem;
+        ssl_certificate_key /certs/192.168.1.102+3-key.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        location / {
+            proxy_pass http://127.0.0.1:9191;
+            proxy_set_header Host \\\$host;
+            sub_filter '</head>' '<script>${INIT_SCRIPT}</script></head>';
+            sub_filter_once  on;
+            sub_filter_types text/html;
+        }
+    }
+}
+NGINXEOF
+systemctl --user enable --now kubestellar-proxy.service"
+    @echo "✓ KubeStellar proxy → https://${GHOST_IP}:8090 (live mode, user: {{USERNAME}})"
+
 # Check KubeStellar Console health on ghost
 kubestellar-status:
     #!/usr/bin/env bash
     GHOST=jorge@192.168.1.102
     GHOST_IP=192.168.1.102
     echo "=== KubeStellar Console ==="
-    curl -sf "http://${GHOST_IP}:8090/" > /dev/null && echo " ✅ http://${GHOST_IP}:8090" || echo " ❌ not reachable"
-    curl -sfk "https://${GHOST_IP}:8443/" > /dev/null && echo " ✅ https://${GHOST_IP}:8443 (TLS via Caddy)" || echo " ℹ  TLS proxy optional (just tls-proxy-start) — plain http works"
+    curl -sfk "https://${GHOST_IP}:8090/" > /dev/null && echo " ✅ https://${GHOST_IP}:8090 (TLS, live mode)" || echo " ❌ not reachable"
     echo "=== Service status ==="
-    ssh ${GHOST} "systemctl --user is-active kubestellar-agent.service kubestellar-console.service"
+    ssh ${GHOST} "systemctl --user is-active kubestellar-agent.service kubestellar-agent-proxy.service kubestellar-console.service kubestellar-proxy.service"
     echo "=== Cluster count ==="
     ssh ${GHOST} "tail -3 ~/kubestellar-console/kc-agent.log | grep -o 'clusters:[0-9]*' || echo 'check log manually'"
 
 # Restart KubeStellar Console services on ghost
 kubestellar-restart:
-    ssh jorge@192.168.1.102 "systemctl --user restart kubestellar-agent.service kubestellar-console.service"
-    @echo "✓ KubeStellar Console restarted"
+    ssh jorge@192.168.1.102 "systemctl --user restart kubestellar-agent.service kubestellar-agent-proxy.service kubestellar-console.service kubestellar-proxy.service"
+    @echo "✓ KubeStellar Console restarted — https://192.168.1.102:8090"
 
 # Tail KubeStellar Console logs on ghost
 kubestellar-logs:
