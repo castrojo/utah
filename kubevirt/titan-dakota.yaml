@@ -23,7 +23,7 @@ metadata:
     titan: "true"
     variant: dakota
 spec:
-  running: false
+  runStrategy: Manual
   template:
     spec:
       domain:
@@ -34,6 +34,7 @@ spec:
         memory:
           guest: 16Gi
         devices:
+          autoattachGraphicsDevice: true
           disks:
             - name: rootdisk
               disk:
