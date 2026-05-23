@@ -1,0 +1,59 @@
+# OTel Collector agent config for the ghost/central node
+# Adds process scraper for QEMU VM + container counts.
+# Uses port 8889 for internal metrics (8888 is taken by ghost's aggregator).
+
+receivers:
+  journald:
+    priority: info
+    start_at: end
+    retry_on_failure:
+      enabled: true
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu: {}
+      memory: {}
+      disk: {}
+      filesystem:
+        exclude_mount_points:
+          mount_points: [/dev, /proc, /sys]
+          match_type: strict
+      network: {}
+      load: {}
+      process:
+        include:
+          names:
+            - qemu-system-x86_64
+            - podman
+            - conmon
+          match_type: strict
+        mute_process_user_error: true
+
+processors:
+  batch:
+    timeout: 10s
+  resourcedetection:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+
+exporters:
+  otlp:
+    endpoint: localhost:4317
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    logs:
+      receivers: [journald]
+      processors: [resourcedetection, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [hostmetrics]
+      processors: [resourcedetection, batch]
+      exporters: [otlp]
