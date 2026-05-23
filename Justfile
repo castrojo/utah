@@ -102,7 +102,7 @@ kubestellar-status:
 # Restart KubeStellar Console services on ghost
 kubestellar-restart:
     ssh jorge@192.168.1.102 "systemctl --user restart kubestellar-agent.service kubestellar-agent-proxy.service kubestellar-console.service kubestellar-proxy.service"
-    @echo "✓ KubeStellar Console restarted — https://192.168.1.102:8090"
+    @echo "✓ KubeStellar Console restarted — https://ghost.tail2a28a.ts.net:8090"
 
 # Tail KubeStellar Console logs on ghost
 kubestellar-logs:
@@ -171,39 +171,17 @@ dashboard-restart HOST="jorge@192.168.1.102":
 dashboard-logs HOST="jorge@192.168.1.102":
     ssh {{HOST}} "podman logs -f bluespeed-dashboard"
 
-# ── TLS / mkcert ─────────────────────────────────────────────────────────────
+# ── TLS / Tailscale cert ──────────────────────────────────────────────────────
 
-# One-time: generate mkcert CA + cert for ghost on ghost
-# Run this once, then import the CA into each browser with: just tls-export-ca
+# Renew the Tailscale Let's Encrypt cert for ghost (valid 90 days, run ~every 60d)
+# No browser import needed — trusted everywhere by default
 tls-setup:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST=jorge@192.168.1.102
-    ssh ${GHOST} "which mkcert || (curl -sLo /tmp/mkcert https://dl.filippo.io/mkcert/latest?for=linux/amd64 && chmod +x /tmp/mkcert && sudo mv /tmp/mkcert /usr/local/bin/mkcert)"
-    ssh ${GHOST} "mkcert -install; mkdir -p ~/certs && cd ~/certs && mkcert 192.168.1.102 ghost localhost 127.0.0.1"
-    @echo "✓ mkcert CA + cert generated. Run: just tls-export-ca"
-
-# Export the mkcert root CA to ~/Downloads so you can import it into browsers
-# Import: Firefox → Settings → Privacy & Security → View Certificates → Authorities → Import
-tls-export-ca:
-    #!/usr/bin/env bash
-    scp jorge@192.168.1.102:~/.local/share/mkcert/rootCA.pem ~/Downloads/ghost-mkcert-ca.pem
-    echo "✓ CA cert saved to ~/Downloads/ghost-mkcert-ca.pem"
-    echo "Firefox: Settings → Privacy & Security → View Certificates → Authorities → Import"
-    echo "⚠ See https://github.com/projectbluefin/bluespeed/issues/36 for long-term TLS plan"
-
-# Start Caddy TLS proxy: ghost:8443 → KubeStellar console (requires mkcert cert)
-tls-proxy-start:
-    ssh jorge@192.168.1.102 "systemctl --user enable --now caddy-tls-proxy.service && systemctl --user is-active caddy-tls-proxy.service"
-    @echo "✓ TLS proxy: https://192.168.1.102:8443 → KubeStellar console"
-
-# Stop Caddy TLS proxy
-tls-proxy-stop:
-    ssh jorge@192.168.1.102 "systemctl --user stop caddy-tls-proxy.service"
-
-# Check TLS proxy status
-tls-proxy-status:
-    ssh jorge@192.168.1.102 "systemctl --user status caddy-tls-proxy.service --no-pager | tail -5"
+    ssh ${GHOST} "tailscale cert ghost.tail2a28a.ts.net && cp ghost.tail2a28a.ts.net.crt ~/certs/ && cp ghost.tail2a28a.ts.net.key ~/certs/"
+    ssh ${GHOST} "systemctl --user restart kubestellar-proxy"
+    echo "✓ Tailscale cert renewed. KubeStellar: https://ghost.tail2a28a.ts.net:8090"
 
 # ── KubeVirt ──────────────────────────────────────────────────────────────────
 
