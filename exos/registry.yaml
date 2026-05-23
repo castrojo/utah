@@ -1,0 +1,30 @@
+# Exo Fleet Registry — bluespeed contributor nodes
+# Format: callsign-N where N = number of times this node's fixes have been merged into Bluefin
+# Register your node with: just exo-register CALLSIGN=yourname
+# Increment your number with: just exo-reset CALLSIGN=yourname
+# Attribution (GitHub handle) is always opt-in — leave null for anonymous
+
+exos:
+  - callsign: knuckle
+    number: 1
+    role: k3s-cluster
+    host: ghost
+    description: "bluespeed primary k3s cluster — Flatcar VM on ghost"
+    registered: "2026-05-23"
+    attribution: null
+
+  - callsign: ghost
+    number: 7
+    role: hub
+    host: localhost
+    description: "bluespeed central server — Jorge's homelab (Bluefin DX)"
+    registered: "2026-05-23"
+    attribution: castrojo
+
+  - callsign: dakota
+    number: 1
+    role: build-node
+    host: 192.168.1.247
+    description: "bluespeed build node — NUC running Bluefin"
+    registered: "2026-05-23"
+    attribution: null

@@ -91,6 +91,20 @@ rename-vm OLD NEW:
     ssh ${GHOST} "ssh -o StrictHostKeyChecking=no core@192.168.122.227 '/opt/bin/k3s kubectl get nodes'"
     @echo "✓ VM renamed {{OLD}} → {{NEW}}"
 
+# ── Exo Fleet Registry ──────────────────────────────────────────────────────
+
+# Register a new Exo node in the fleet
+# Usage: just exo-register CALLSIGN=yourname
+exo-register CALLSIGN:
+    @echo "→ Registering {{CALLSIGN}}-1 in exos/registry.yaml"
+    @echo "TODO: implement exo-register"
+
+# Increment your Exo's reset number after a merged fix
+# Usage: just exo-reset CALLSIGN=yourname
+exo-reset CALLSIGN:
+    @echo "→ Resetting {{CALLSIGN}} — opening PR to increment number"
+    @echo "TODO: implement exo-reset"
+
 # ── Full Stack ────────────────────────────────────────────────────────────────
 
 # Deploy everything: central node stack + agent on a second node
