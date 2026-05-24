@@ -217,54 +217,58 @@ kubevirt-manager-proxy-start:
     ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service && systemctl --user is-active kubevirt-manager-proxy.service"
     @echo "✓ KubeVirt Manager: http://192.168.1.102:30180"
 
-# Apply all Titan VM manifests (titan-dakota, titan-stable, titan-lts)
-install-titans:
+# Apply all test VM manifests via Argo
+# Usage: just install-test-vms
+install-test-vms:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f /tmp/titan-dakota.yaml; sudo -E kubectl apply -f /tmp/titan-stable.yaml; sudo -E kubectl apply -f /tmp/titan-lts.yaml'"
-    @echo "✓ Titan manifests applied — DataVolume import will begin"
+    echo "→ Submitting install-test-vms workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-test-vms -n argo --watch'"
+    echo "✓ Test VMs applied"
 
-# Start a Titan VM
-# Usage: just titan-start dakota
-titan-start VARIANT:
+# Start a test VM
+# Usage: just test-vm-start dakota
+test-vm-start VARIANT:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start titan-{{VARIANT}} -n default'"
-    echo "→ titan-{{VARIANT}} starting — watching VMI..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/titan-{{VARIANT}} --timeout=120s'" || true
-    echo "✓ Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start test-vm-{{VARIANT}} -n default'"
+    echo "→ test-vm-{{VARIANT}} starting — watching VMI..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/test-vm-{{VARIANT}} --timeout=120s'" || true
+    echo "✓ Open http://192.168.1.102:30190/guacamole/ → test-vm-{{VARIANT}}"
 
-# Stop a Titan VM
-# Usage: just titan-stop dakota
-titan-stop VARIANT:
+# Stop a test VM
+# Usage: just test-vm-stop dakota
+test-vm-stop VARIANT:
     #!/usr/bin/env bash
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-{{VARIANT}} -n default'"
-    echo "✓ titan-{{VARIANT}} stopped"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop test-vm-{{VARIANT}} -n default'"
+    echo "✓ test-vm-{{VARIANT}} stopped"
 
-# Status of all Titans
-# Usage: just titan-status
-titan-status:
+# Status of all test VMs
+# Usage: just test-vm-status
+test-vm-status:
     #!/usr/bin/env bash
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    echo "=== Titan VMs ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l titan=true'"
+    echo "=== Test VMs ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l role=test-vm'"
     echo "=== DataVolumes ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep titan || echo none'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep test-vm || echo none'"
     echo "=== kvnc-proxy pods ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l titan=true'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l role=test-vm'"
     echo "Console: http://192.168.1.102:30190/guacamole/"
 
-# Open Titan console via Guacamole
-titan-console VARIANT:
-    @echo "Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
+# Open test VM console via Guacamole
+test-vm-console VARIANT:
+    @echo "Open http://192.168.1.102:30190/guacamole/ → test-vm-{{VARIANT}}"
 
 # KubeVirt full health check
 kubevirt-status:
@@ -378,11 +382,11 @@ guacamole-status:
     curl -sf --max-time 5 "http://${GHOST_IP}:30190/guacamole/" > /dev/null && \
       echo " ✅ http://${GHOST_IP}:30190/guacamole/" || echo " ❌ not reachable"
 
-# ── Titan VM Fleet ─────────────────────────────────────────────────────────────
+# ── Test VM Fleet ─────────────────────────────────────────────────────────────
 
 # One-time: configure CDI to allow insecure pulls from ghost zot (192.168.1.102:5000)
-# Usage: just titan-cdi-patch
-titan-cdi-patch:
+# Usage: just test-vm-cdi-patch
+test-vm-cdi-patch:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -393,9 +397,9 @@ titan-cdi-patch:
       ssh ${KNUCKLE1} '${KBC} apply -f /tmp/cdi-insecure-registry.yaml'"
     echo "✓ CDI insecure registry configured for 192.168.1.102:5000"
 
-# One-time: deploy kvnc-proxy RBAC + titan-dakota VNC proxy
-# Usage: just titan-deploy-proxy
-titan-deploy-proxy:
+# One-time: deploy kvnc-proxy RBAC + test-vm-dakota VNC proxy
+# Usage: just test-vm-deploy-proxy
+test-vm-deploy-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -410,9 +414,9 @@ titan-deploy-proxy:
     ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/titan-dakota-vnc-proxy --timeout=120s'"
     echo "✓ titan-dakota-vnc.default.svc.cluster.local:5900 ready"
 
-# Import titan-dakota disk from ghost zot (takes ~5-10 min)
-# Usage: just titan-create-dakota
-titan-create-dakota:
+# Import test-vm-dakota disk from ghost zot (takes ~5-10 min)
+# Usage: just test-vm-create-dakota
+test-vm-create-dakota:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -423,29 +427,29 @@ titan-create-dakota:
       ssh ${KNUCKLE1} '${KBC} apply -f /tmp/titan-dakota.yaml'"
     echo "→ DataVolume import started — polling status (may take 5-10 min)..."
     while true; do
-      STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv titan-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
+      STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv test-vm-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
       echo "  DataVolume: ${STATUS}"
       [ "${STATUS}" = "Succeeded" ] && break
       [ "${STATUS}" = "Failed" ] && echo "❌ Import failed" && exit 1
       sleep 15
     done
-    echo "✓ titan-dakota-disk imported"
+    echo "✓ test-vm-dakota-disk imported"
 
-# Re-provision titan-dakota from latest zot image
-# Usage: just titan-reprovision-dakota
-titan-reprovision-dakota:
+# Re-provision test-vm-dakota from latest zot image
+# Usage: just test-vm-reprovision-dakota
+test-vm-reprovision-dakota:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    echo "→ Stopping titan-dakota..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-dakota -n default 2>/dev/null || true'"
+    echo "→ Stopping test-vm-dakota..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop test-vm-dakota -n default 2>/dev/null || true'"
     sleep 5
     echo "→ Deleting old DataVolume..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} delete dv titan-dakota-disk --ignore-not-found'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} delete dv test-vm-dakota-disk --ignore-not-found'"
     echo "→ Re-importing from 192.168.1.102:5000/dakota:latest..."
-    just titan-create-dakota
+    just test-vm-create-dakota
 
 # Add persistent socat forward on ghost for Guacamole (port 30190 → knuckle-1:30190)
 # Usage: just ghost-add-guac-forward
