@@ -5,6 +5,10 @@
 default:
     @just --list
 
+# Kubeconfig for the ghost k3s cluster (local access — no SSH hop required)
+# Ghost (192.168.1.102) runs k3s directly; API accessible at :6443 from local machine
+export KUBECONFIG := env_var_or_default("KUBECONFIG", env_var("HOME") + "/.kube/bluespeed.yaml")
+
 # ── Observability Stack ───────────────────────────────────────────────────────
 
 # Deploy full observability stack to a central node
@@ -12,12 +16,9 @@ default:
 setup-otel HOST:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Submitting setup-otel workflow (target: {{HOST}})..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/setup-otel \
-       -p host={{HOST}} -n argo --watch'"
+    argo submit --from workflowtemplate/setup-otel \
+      -p host={{HOST}} -n argo --watch
     echo "✓ Observability stack deployed"
 
 # Deploy OTel Collector agent to a node
@@ -181,33 +182,24 @@ tls-setup:
 install-kubevirt:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Submitting install-kubevirt workflow..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/install-kubevirt -n argo --watch'"
+    argo submit --from workflowtemplate/install-kubevirt -n argo --watch
     echo "✓ KubeVirt installed"
 
 # Install CDI (disk image import/clone) into k3s on knuckle-1
 install-cdi:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Submitting install-cdi workflow..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/install-cdi -n argo --watch'"
+    argo submit --from workflowtemplate/install-cdi -n argo --watch
     echo "✓ CDI installed"
 
 # Install KubeVirt Manager web UI — noVNC console at http://192.168.1.102:30180
 install-kubevirt-manager:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Submitting install-kubevirt-manager workflow..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/install-kubevirt-manager -n argo --watch'"
+    argo submit --from workflowtemplate/install-kubevirt-manager -n argo --watch
     ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service"
     echo "✓ KubeVirt Manager installed → http://192.168.1.102:30180"
 
@@ -221,11 +213,8 @@ kubevirt-manager-proxy-start:
 install-test-vms:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Submitting install-test-vms workflow..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/install-test-vms -n argo --watch'"
+    argo submit --from workflowtemplate/install-test-vms -n argo --watch
     echo "✓ Test VMs applied"
 
 # Start a test VM
@@ -233,36 +222,31 @@ install-test-vms:
 test-vm-start VARIANT:
     #!/usr/bin/env bash
     set -euo pipefail
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start test-vm-{{VARIANT}} -n default'"
-    echo "→ test-vm-{{VARIANT}} starting — watching VMI..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/test-vm-{{VARIANT}} --timeout=120s'" || true
+    NS=$(kubectl get vm -A --no-headers 2>/dev/null | awk '/test-vm-{{VARIANT}}/{print $1}' | head -1)
+    NS=${NS:-default}
+    echo "→ Starting test-vm-{{VARIANT}} in namespace ${NS}..."
+    kubectl patch vm test-vm-{{VARIANT}} -n ${NS} --type=merge -p '{"spec":{"running":true}}'
+    kubectl wait --for=condition=ready vmi/test-vm-{{VARIANT}} -n ${NS} --timeout=120s || true
     echo "✓ Open http://192.168.1.102:30190/guacamole/ → test-vm-{{VARIANT}}"
 
 # Stop a test VM
 # Usage: just test-vm-stop dakota
 test-vm-stop VARIANT:
     #!/usr/bin/env bash
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop test-vm-{{VARIANT}} -n default'"
+    set -euo pipefail
+    NS=$(kubectl get vm -A --no-headers 2>/dev/null | awk '/test-vm-{{VARIANT}}/{print $1}' | head -1)
+    NS=${NS:-default}
+    kubectl patch vm test-vm-{{VARIANT}} -n ${NS} --type=merge -p '{"spec":{"running":false}}'
     echo "✓ test-vm-{{VARIANT}} stopped"
 
 # Status of all test VMs
 # Usage: just test-vm-status
 test-vm-status:
     #!/usr/bin/env bash
-    GHOST="jorge@192.168.1.102"
-    KNUCKLE1="core@192.168.122.227"
-    KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
     echo "=== Test VMs ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l role=test-vm'"
+    kubectl get vms -A 2>/dev/null | grep -E 'test-vm|NAMESPACE' || echo '(no test-vms yet)'
     echo "=== DataVolumes ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep test-vm || echo none'"
-    echo "=== kvnc-proxy pods ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l role=test-vm'"
+    kubectl get dv -A 2>/dev/null | grep test-vm || echo none
     echo "Console: http://192.168.1.102:30190/guacamole/"
 
 # Open test VM console via Guacamole
@@ -285,13 +269,14 @@ kubevirt-status:
 install-argo:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
-    echo "→ Bootstrapping Argo Workflows (direct kubectl — bootstrap only)..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
-       kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f - && \
-       kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml && \
-       kubectl wait -n argo deploy/workflow-controller --for=condition=Available --timeout=300s'"
+    # Runs locally via kubeconfig — no SSH hop (ghost k3s is accessible at 192.168.1.102:6443)
+    # Uses --server-side: Argo CRDs exceed the 262144-byte annotation limit on normal apply
+    ARGO_VERSION=v4.0.5
+    echo "→ Bootstrapping Argo Workflows ${ARGO_VERSION} (direct kubectl — bootstrap only)..."
+    kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -n argo --server-side \
+      -f https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/install.yaml
+    kubectl wait -n argo deploy/workflow-controller --for=condition=Available --timeout=300s
     echo "✓ Argo Workflows bootstrapped — run: just apply-workflow-templates"
 
 # Apply all Argo WorkflowTemplates from argo/ directory
@@ -300,12 +285,10 @@ install-argo:
 apply-workflow-templates:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
+    # Runs locally via kubeconfig — no SSH hop required
     echo "→ Applying Argo WorkflowTemplates..."
     for f in argo/*.yaml; do
-      scp "$f" jorge@192.168.1.102:/tmp/wft-$(basename "$f")
-      ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-        'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -n argo -f /tmp/wft-$(basename "$f")'"
+      kubectl apply -n argo -f "$f"
       echo "  ✓ $(basename $f)"
     done
     echo "✓ All WorkflowTemplates applied"
@@ -315,13 +298,10 @@ apply-workflow-templates:
 trigger-build VARIANT IMAGE:
     #!/usr/bin/env bash
     set -euo pipefail
-    KNUCKLE=core@192.168.122.227
     echo "→ Triggering BST build: {{VARIANT}}:{{IMAGE}}"
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
-      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
-       argo submit --from workflowtemplate/bst-build \
-       -p variant={{VARIANT}} -p image-tag={{IMAGE}} \
-       -n argo --watch'"
+    argo submit --from workflowtemplate/bst-build \
+      -p variant={{VARIANT}} -p image-tag={{IMAGE}} \
+      -n argo --watch
 
 # Install Argo Workflows + Argo Events on knuckle-1 via k3s auto-deploy
 # Usage: just setup-argo HOST=core@192.168.122.227
