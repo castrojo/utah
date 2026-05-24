@@ -10,8 +10,15 @@ default:
 # Deploy full observability stack to a central node
 # Usage: just setup-otel HOST=jorge@192.168.1.102
 setup-otel HOST:
-    @echo "→ Deploying OTel observability stack to {{HOST}}..."
-    bash otel/deploy.sh {{HOST}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Submitting setup-otel workflow (target: {{HOST}})..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/setup-otel \
+       -p host={{HOST}} -n argo --watch'"
+    echo "✓ Observability stack deployed"
 
 # Deploy OTel Collector agent to a node
 # Usage: just setup-otel-agent HOST=jorge@192.168.1.247
@@ -188,20 +195,22 @@ install-kubevirt:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    VERSION=$(curl -s https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
-    echo "→ Installing KubeVirt ${VERSION}..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-cr.yaml; sudo -E kubectl -n kubevirt wait kv kubevirt --for condition=Available --timeout=300s'"
-    echo "✓ KubeVirt ${VERSION} ready"
+    echo "→ Submitting install-kubevirt workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-kubevirt -n argo --watch'"
+    echo "✓ KubeVirt installed"
 
 # Install CDI (disk image import/clone) into k3s on knuckle-1
 install-cdi:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    VERSION=$(curl -sL https://api.github.com/repos/kubevirt/containerized-data-importer/releases/latest | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | head -1)
-    echo "→ Installing CDI ${VERSION}..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-cr.yaml; sudo -E kubectl -n cdi wait cdi cdi --for condition=Available --timeout=300s'"
-    echo "✓ CDI ${VERSION} ready"
+    echo "→ Submitting install-cdi workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-cdi -n argo --watch'"
+    echo "✓ CDI installed"
 
 # Install KubeVirt Manager web UI — noVNC console at http://192.168.1.102:30180
 install-kubevirt-manager:
@@ -279,6 +288,38 @@ kubevirt-status:
 
 # ── Argo Workflows ───────────────────────────────────────────────────────────
 
+# Bootstrap: install Argo Workflows via direct kubectl apply (one time only)
+# This is the ONLY recipe that uses kubectl apply directly.
+# All subsequent cluster operations go through Argo WorkflowTemplates.
+# Usage: just install-argo
+install-argo:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Bootstrapping Argo Workflows (direct kubectl — bootstrap only)..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+       kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f - && \
+       kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml && \
+       kubectl wait -n argo deploy/workflow-controller --for=condition=Available --timeout=300s'"
+    echo "✓ Argo Workflows bootstrapped — run: just apply-workflow-templates"
+
+# Apply all Argo WorkflowTemplates from argo/ directory
+# Run once after just install-argo, and after any template change
+# Usage: just apply-workflow-templates
+apply-workflow-templates:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Applying Argo WorkflowTemplates..."
+    for f in argo/*.yaml; do
+      scp "$f" jorge@192.168.1.102:/tmp/wft-$(basename "$f")
+      ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+        'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -n argo -f /tmp/wft-$(basename "$f")'"
+      echo "  ✓ $(basename $f)"
+    done
+    echo "✓ All WorkflowTemplates applied"
+
 # Install Argo Workflows + Argo Events on knuckle-1 via k3s auto-deploy
 # Usage: just setup-argo HOST=core@192.168.122.227
 setup-argo HOST="core@192.168.122.227":
@@ -305,9 +346,24 @@ argo-proxy-stop:
 
 # ── Full Stack ────────────────────────────────────────────────────────────────
 
-# Deploy everything: central node stack + agent on a second node
-# Usage: just setup CENTRAL=user@your-central-node NODE=user@your-node
-setup CENTRAL NODE:
+# ── Full Cluster Setup ──────────────────────────────────────────────────────
+
+# Deploy the full cluster stack in order from a fresh first boot.
+# Prerequisites: just install-argo && just apply-workflow-templates
+# Every sub-recipe is also runnable standalone for day-2 maintenance.
+# Usage: just setup
+setup:
+    @echo "→ Full cluster setup (Argo must be bootstrapped first)..."
+    just install-kubevirt
+    just install-cdi
+    just install-kubestellar-console
+    just install-test-vms
+    just setup-otel HOST=jorge@192.168.1.102
+    @echo "✓ Full cluster setup complete"
+
+# Deploy OTel stack to central + agent node (legacy multi-node form)
+# Usage: just setup-otel-full CENTRAL=user@host NODE=user@host
+setup-otel-full CENTRAL NODE:
     just setup-otel HOST={{CENTRAL}}
     just setup-otel-agent HOST={{NODE}}
     #!/usr/bin/env bash
