@@ -14,7 +14,7 @@ exos:
     number: 1
     role: hub
     prometheus_host: ghost
-    description: "Hub node — Bluefin workstation hosting k3s, observability stack, and Raptor Control Center"
+    description: "Control plane — Flatcar Linux node hosting k3s, BST build host, OCI registry (zot), and observability stack"
     registered: "2026-05-23"
 
   - callsign: knuckle
