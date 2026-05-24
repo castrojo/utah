@@ -1,0 +1,11 @@
+[Unit]
+Description=socat forward: ghost:30190 -> knuckle-1:30190 (Guacamole)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:30190,fork,reuseaddr TCP:192.168.122.227:30190
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

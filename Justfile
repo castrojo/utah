@@ -70,26 +70,13 @@ configure-kubestellar-proxy USERNAME="jorge":
     GHOST=jorge@192.168.1.102
     GHOST_IP=192.168.1.102
     LINUX_USER={{USERNAME}}
-    INIT_SCRIPT="localStorage.setItem(\\\"kc-demo-mode\\\",\\\"false\\\");if(!localStorage.getItem(\\\"kc-user-cache\\\"))localStorage.setItem(\\\"kc-user-cache\\\",JSON.stringify({id:\\\"local-${LINUX_USER}\\\",github_id:\\\"local-${LINUX_USER}\\\",github_login:\\\"${LINUX_USER}\\\",role:\\\"admin\\\",onboarded:true}));"
-    ssh ${GHOST} "mkdir -p ~/certs/nginx && cat > ~/certs/nginx/nginx.conf << NGINXEOF
-events {}
-http {
-    server {
-        listen 8090 ssl;
-        ssl_certificate     /certs/192.168.1.102+3.pem;
-        ssl_certificate_key /certs/192.168.1.102+3-key.pem;
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        location / {
-            proxy_pass http://127.0.0.1:9191;
-            proxy_set_header Host \\\$host;
-            sub_filter '</head>' '<script>${INIT_SCRIPT}</script></head>';
-            sub_filter_once  on;
-            sub_filter_types text/html;
-        }
-    }
-}
-NGINXEOF
-systemctl --user enable --now kubestellar-proxy.service"
+    INIT_SCRIPT="localStorage.setItem(\"kc-demo-mode\",\"false\");if(!localStorage.getItem(\"kc-user-cache\"))localStorage.setItem(\"kc-user-cache\",JSON.stringify({id:\"local-${LINUX_USER}\",github_id:\"local-${LINUX_USER}\",github_login:\"${LINUX_USER}\",role:\"admin\",onboarded:true}));"
+    TMPFILE=$(mktemp /tmp/nginx-proxy-XXXXX.conf)
+    INIT_SCRIPT="$INIT_SCRIPT" envsubst '${INIT_SCRIPT}' < kubestellar/nginx-proxy.conf > "$TMPFILE"
+    ssh ${GHOST} "mkdir -p ~/certs/nginx"
+    scp "$TMPFILE" ${GHOST}:~/certs/nginx/nginx.conf
+    rm -f "$TMPFILE"
+    ssh ${GHOST} "systemctl --user enable --now kubestellar-proxy.service"
     @echo "✓ KubeStellar proxy → https://${GHOST_IP}:8090 (live mode, user: {{USERNAME}})"
 
 # Check KubeStellar Console health on ghost
@@ -165,7 +152,7 @@ dashboard-status HOST="jorge@192.168.1.102":
     echo "=== Dashboard ==="
     curl -sf "http://${GHOST_IP}:8091/" > /dev/null && echo " ✅ http://${GHOST_IP}:8091" || echo " ❌ not reachable"
     echo "=== Container ==="
-    ssh {{HOST}} "podman ps --filter name=bluespeed-dashboard --format 'Status: {{.Status}} | Image: {{.Image}}'" 2>/dev/null || echo " (ssh failed)"
+    ssh {{HOST}} "podman ps --filter name=bluespeed-dashboard --format 'Status: {{{{.Status}}}} | Image: {{{{.Image}}}}'" 2>/dev/null || echo " (ssh failed)"
 
 # Restart the dashboard container on ghost
 dashboard-restart HOST="jorge@192.168.1.102":
@@ -526,22 +513,6 @@ ghost-add-guac-forward:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
-    ssh ${GHOST} 'cat > /tmp/socat-guacamole.service << '"'"'SVCEOF'"'"'
-[Unit]
-Description=socat forward: ghost:30190 -> knuckle-1:30190 (Guacamole)
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/socat TCP-LISTEN:30190,fork,reuseaddr TCP:192.168.122.227:30190
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-SVCEOF
-mkdir -p ~/.config/systemd/user
-mv /tmp/socat-guacamole.service ~/.config/systemd/user/socat-guacamole.service
-systemctl --user daemon-reload
-systemctl --user enable --now socat-guacamole.service
-systemctl --user is-active socat-guacamole.service'
+    scp kubestellar/socat-guacamole.service ${GHOST}:/tmp/socat-guacamole.service
+    ssh ${GHOST} "mkdir -p ~/.config/systemd/user && mv /tmp/socat-guacamole.service ~/.config/systemd/user/socat-guacamole.service && systemctl --user daemon-reload && systemctl --user enable --now socat-guacamole.service && systemctl --user is-active socat-guacamole.service"
     echo "✓ ghost:30190 → 192.168.122.227:30190 forwarding active"
