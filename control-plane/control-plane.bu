@@ -1,0 +1,68 @@
+variant: flatcar
+version: 1.0.0
+
+# control-plane/control-plane.bu
+# Butane source for the control plane Ignition config.
+# Transpile: butane --pretty --strict control-plane.bu > control-plane.ign
+# Embed in knuckle ISO build.
+#
+# Provides: k3s sysext, BST sysext, zot Quadlet (only boot dependency),
+#           parameterised SSH key placeholder.
+# Does NOT provide: disk/fstab (user manages storage), SSH key content
+#           (install-time decision), day-2 workloads (see: just setup).
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - YOUR_SSH_PUBLIC_KEY   # substitute at install time
+
+storage:
+  directories:
+    - path: /etc/zot
+      mode: 0755
+    - path: /var/lib/registry
+      mode: 0755
+
+  files:
+    - path: /etc/zot/config.json
+      mode: 0644
+      contents:
+        inline: |
+          {
+            "distSpecVersion": "1.1.0",
+            "storage": { "rootDirectory": "/var/lib/registry" },
+            "http": { "address": "0.0.0.0", "port": "5000" },
+            "log": { "level": "info" }
+          }
+
+    - path: /etc/containers/systemd/zot.container
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          Description=Zot OCI registry
+          After=network-online.target local-fs.target
+          Wants=network-online.target
+
+          [Container]
+          Image=ghcr.io/project-zot/zot-minimal-linux-amd64:latest
+          ContainerName=zot
+          PublishPort=0.0.0.0:5000:5000
+          Volume=/var/lib/registry:/var/lib/registry:z
+          Volume=/etc/zot/config.json:/etc/zot/config.json:z,ro
+          Exec=serve /etc/zot/config.json
+
+          [Service]
+          Restart=always
+          TimeoutStopSec=70
+
+          [Install]
+          WantedBy=multi-user.target
+
+systemd:
+  units:
+    - name: zot.service
+      enabled: true
+    # k3s and BST are provided via Flatcar sysext — knuckle's concern.
+    # Uncomment k3s.service once knuckle sysext build is complete.
