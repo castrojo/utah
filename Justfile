@@ -320,6 +320,19 @@ apply-workflow-templates:
     done
     echo "✓ All WorkflowTemplates applied"
 
+# Trigger a BST build via Argo Workflows
+# Usage: just trigger-build VARIANT=dakota IMAGE=pr-497
+trigger-build VARIANT IMAGE:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Triggering BST build: {{VARIANT}}:{{IMAGE}}"
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/bst-build \
+       -p variant={{VARIANT}} -p image-tag={{IMAGE}} \
+       -n argo --watch'"
+
 # Install Argo Workflows + Argo Events on knuckle-1 via k3s auto-deploy
 # Usage: just setup-argo HOST=core@192.168.122.227
 setup-argo HOST="core@192.168.122.227":

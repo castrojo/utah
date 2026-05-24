@@ -1,0 +1,70 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: bst-build
+  namespace: argo
+spec:
+  entrypoint: bst-build-pipeline
+  arguments:
+    parameters:
+      - name: variant
+        value: dakota
+        enum: [dakota, bluefin, lts]
+      - name: image-tag
+        value: latest
+  templates:
+    - name: bst-build-pipeline
+      steps:
+        - - name: build
+            template: bst-build-step
+        - - name: push
+            template: zot-push-step
+
+    - name: bst-build-step
+      nodeSelector:
+        kubernetes.io/hostname: ghost
+      volumes:
+        - name: bst-cache
+          hostPath:
+            path: /var/cache/bst
+            type: DirectoryOrCreate
+        - name: build-output
+          hostPath:
+            path: /var/tmp/bst-output
+            type: DirectoryOrCreate
+      inputs:
+        parameters:
+          - name: variant
+          - name: image-tag
+      script:
+        image: ghcr.io/projectbluefin/dakota:bst-runner
+        command: [bash]
+        volumeMounts:
+          - name: bst-cache
+            mountPath: /var/cache/bst
+          - name: build-output
+            mountPath: /var/tmp/bst-output
+        source: |
+          set -euo pipefail
+          echo "→ BST build: {{inputs.parameters.variant}}:{{inputs.parameters.image-tag}}"
+          cd /workspace/dakota
+          bst build oci/bluefin.bst
+          echo "✓ BST build complete"
+
+    - name: zot-push-step
+      nodeSelector:
+        kubernetes.io/hostname: ghost
+      inputs:
+        parameters:
+          - name: variant
+          - name: image-tag
+      script:
+        image: quay.io/skopeo/stable:latest
+        command: [bash]
+        source: |
+          set -euo pipefail
+          skopeo copy \
+            oci:/var/tmp/bst-output/{{inputs.parameters.variant}} \
+            docker://192.168.1.102:5000/{{inputs.parameters.variant}}:{{inputs.parameters.image-tag}} \
+            --dest-tls-verify=false
+          echo "✓ Pushed {{inputs.parameters.variant}}:{{inputs.parameters.image-tag}}"
