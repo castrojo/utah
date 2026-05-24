@@ -10,8 +10,15 @@ default:
 # Deploy full observability stack to a central node
 # Usage: just setup-otel HOST=jorge@192.168.1.102
 setup-otel HOST:
-    @echo "→ Deploying OTel observability stack to {{HOST}}..."
-    bash otel/deploy.sh {{HOST}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Submitting setup-otel workflow (target: {{HOST}})..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/setup-otel \
+       -p host={{HOST}} -n argo --watch'"
+    echo "✓ Observability stack deployed"
 
 # Deploy OTel Collector agent to a node
 # Usage: just setup-otel-agent HOST=jorge@192.168.1.247
@@ -29,17 +36,15 @@ otel-status HOST:
     curl -sf "http://${IP}:9090/-/ready" && echo " ✅" || echo " ❌ not ready"
     echo "=== OTel Collector ==="
     curl -sf "http://${IP}:8888/metrics" | grep -c otelcol_process && echo " ✅" || echo " ❌ not ready"
-    echo "=== Perses ==="
-    curl -sf "http://${IP}:8082/api/v1/health" && echo " ✅" || echo " ❌ not ready"
 
 # Tail logs from observability stack on central node
 otel-logs HOST:
-    ssh {{HOST}} "journalctl --user -f -u loki -u prometheus -u otelcol -u perses"
+    ssh {{HOST}} "journalctl --user -f -u loki -u prometheus -u otelcol"
 
 # Stop and remove observability stack
 otel-teardown HOST:
-    ssh {{HOST}} "systemctl --user stop loki prometheus otelcol perses 2>/dev/null || true && \
-                  systemctl --user disable loki prometheus otelcol perses 2>/dev/null || true"
+    ssh {{HOST}} "systemctl --user stop loki prometheus otelcol 2>/dev/null || true && \
+                  systemctl --user disable loki prometheus otelcol 2>/dev/null || true"
     @echo "✓ Observability stack stopped on {{HOST}}"
 
 # ── KubeStellar Console ─────────────────────────────────────────────────────
@@ -190,20 +195,22 @@ install-kubevirt:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    VERSION=$(curl -s https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
-    echo "→ Installing KubeVirt ${VERSION}..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/kubevirt-cr.yaml; sudo -E kubectl -n kubevirt wait kv kubevirt --for condition=Available --timeout=300s'"
-    echo "✓ KubeVirt ${VERSION} ready"
+    echo "→ Submitting install-kubevirt workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-kubevirt -n argo --watch'"
+    echo "✓ KubeVirt installed"
 
 # Install CDI (disk image import/clone) into k3s on knuckle-1
 install-cdi:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    VERSION=$(curl -sL https://api.github.com/repos/kubevirt/containerized-data-importer/releases/latest | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | head -1)
-    echo "→ Installing CDI ${VERSION}..."
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-operator.yaml; sudo -E kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/${VERSION}/cdi-cr.yaml; sudo -E kubectl -n cdi wait cdi cdi --for condition=Available --timeout=300s'"
-    echo "✓ CDI ${VERSION} ready"
+    echo "→ Submitting install-cdi workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-cdi -n argo --watch'"
+    echo "✓ CDI installed"
 
 # Install KubeVirt Manager web UI — noVNC console at http://192.168.1.102:30180
 install-kubevirt-manager:
@@ -219,54 +226,58 @@ kubevirt-manager-proxy-start:
     ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service && systemctl --user is-active kubevirt-manager-proxy.service"
     @echo "✓ KubeVirt Manager: http://192.168.1.102:30180"
 
-# Apply all Titan VM manifests (titan-dakota, titan-stable, titan-lts)
-install-titans:
+# Apply all test VM manifests via Argo
+# Usage: just install-test-vms
+install-test-vms:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f /tmp/titan-dakota.yaml; sudo -E kubectl apply -f /tmp/titan-stable.yaml; sudo -E kubectl apply -f /tmp/titan-lts.yaml'"
-    @echo "✓ Titan manifests applied — DataVolume import will begin"
+    echo "→ Submitting install-test-vms workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-test-vms -n argo --watch'"
+    echo "✓ Test VMs applied"
 
-# Start a Titan VM
-# Usage: just titan-start dakota
-titan-start VARIANT:
+# Start a test VM
+# Usage: just test-vm-start dakota
+test-vm-start VARIANT:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start titan-{{VARIANT}} -n default'"
-    echo "→ titan-{{VARIANT}} starting — watching VMI..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/titan-{{VARIANT}} --timeout=120s'" || true
-    echo "✓ Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl start test-vm-{{VARIANT}} -n default'"
+    echo "→ test-vm-{{VARIANT}} starting — watching VMI..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=ready vmi/test-vm-{{VARIANT}} --timeout=120s'" || true
+    echo "✓ Open http://192.168.1.102:30190/guacamole/ → test-vm-{{VARIANT}}"
 
-# Stop a Titan VM
-# Usage: just titan-stop dakota
-titan-stop VARIANT:
+# Stop a test VM
+# Usage: just test-vm-stop dakota
+test-vm-stop VARIANT:
     #!/usr/bin/env bash
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-{{VARIANT}} -n default'"
-    echo "✓ titan-{{VARIANT}} stopped"
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop test-vm-{{VARIANT}} -n default'"
+    echo "✓ test-vm-{{VARIANT}} stopped"
 
-# Status of all Titans
-# Usage: just titan-status
-titan-status:
+# Status of all test VMs
+# Usage: just test-vm-status
+test-vm-status:
     #!/usr/bin/env bash
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    echo "=== Titan VMs ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l titan=true'"
+    echo "=== Test VMs ==="
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get vm -l role=test-vm'"
     echo "=== DataVolumes ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep titan || echo none'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv 2>/dev/null | grep test-vm || echo none'"
     echo "=== kvnc-proxy pods ==="
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l titan=true'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get pods -l role=test-vm'"
     echo "Console: http://192.168.1.102:30190/guacamole/"
 
-# Open Titan console via Guacamole
-titan-console VARIANT:
-    @echo "Open http://192.168.1.102:30190/guacamole/ → titan-{{VARIANT}}"
+# Open test VM console via Guacamole
+test-vm-console VARIANT:
+    @echo "Open http://192.168.1.102:30190/guacamole/ → test-vm-{{VARIANT}}"
 
 # KubeVirt full health check
 kubevirt-status:
@@ -276,6 +287,51 @@ kubevirt-status:
     echo "KubeVirt Manager: http://192.168.1.102:30180"
 
 # ── Argo Workflows ───────────────────────────────────────────────────────────
+
+# Bootstrap: install Argo Workflows via direct kubectl apply (one time only)
+# This is the ONLY recipe that uses kubectl apply directly.
+# All subsequent cluster operations go through Argo WorkflowTemplates.
+# Usage: just install-argo
+install-argo:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Bootstrapping Argo Workflows (direct kubectl — bootstrap only)..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+       kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f - && \
+       kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml && \
+       kubectl wait -n argo deploy/workflow-controller --for=condition=Available --timeout=300s'"
+    echo "✓ Argo Workflows bootstrapped — run: just apply-workflow-templates"
+
+# Apply all Argo WorkflowTemplates from argo/ directory
+# Run once after just install-argo, and after any template change
+# Usage: just apply-workflow-templates
+apply-workflow-templates:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Applying Argo WorkflowTemplates..."
+    for f in argo/*.yaml; do
+      scp "$f" jorge@192.168.1.102:/tmp/wft-$(basename "$f")
+      ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+        'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -n argo -f /tmp/wft-$(basename "$f")'"
+      echo "  ✓ $(basename $f)"
+    done
+    echo "✓ All WorkflowTemplates applied"
+
+# Trigger a BST build via Argo Workflows
+# Usage: just trigger-build VARIANT=dakota IMAGE=pr-497
+trigger-build VARIANT IMAGE:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KNUCKLE=core@192.168.122.227
+    echo "→ Triggering BST build: {{VARIANT}}:{{IMAGE}}"
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/bst-build \
+       -p variant={{VARIANT}} -p image-tag={{IMAGE}} \
+       -n argo --watch'"
 
 # Install Argo Workflows + Argo Events on knuckle-1 via k3s auto-deploy
 # Usage: just setup-argo HOST=core@192.168.122.227
@@ -303,16 +359,31 @@ argo-proxy-stop:
 
 # ── Full Stack ────────────────────────────────────────────────────────────────
 
-# Deploy everything: central node stack + agent on a second node
-# Usage: just setup CENTRAL=user@your-central-node NODE=user@your-node
-setup CENTRAL NODE:
+# ── Full Cluster Setup ──────────────────────────────────────────────────────
+
+# Deploy the full cluster stack in order from a fresh first boot.
+# Prerequisites: just install-argo && just apply-workflow-templates
+# Every sub-recipe is also runnable standalone for day-2 maintenance.
+# Usage: just setup
+setup:
+    @echo "→ Full cluster setup (Argo must be bootstrapped first)..."
+    just install-kubevirt
+    just install-cdi
+    just install-kubestellar-console
+    just install-test-vms
+    just setup-otel HOST=jorge@192.168.1.102
+    @echo "✓ Full cluster setup complete"
+
+# Deploy OTel stack to central + agent node (legacy multi-node form)
+# Usage: just setup-otel-full CENTRAL=user@host NODE=user@host
+setup-otel-full CENTRAL NODE:
     just setup-otel HOST={{CENTRAL}}
     just setup-otel-agent HOST={{NODE}}
     #!/usr/bin/env bash
     IP=$(echo "{{CENTRAL}}" | cut -d@ -f2)
     echo ""
     echo "✅ Bluespeed stack deployed"
-    echo "   Perses (dashboards): http://${IP}:8082"
+    echo "   KubeStellar Console (dashboards): http://${IP}:8090"
     echo "   Prometheus (metrics): http://${IP}:9090"
     echo "   Loki (logs):         http://${IP}:3100"
 
@@ -380,11 +451,11 @@ guacamole-status:
     curl -sf --max-time 5 "http://${GHOST_IP}:30190/guacamole/" > /dev/null && \
       echo " ✅ http://${GHOST_IP}:30190/guacamole/" || echo " ❌ not reachable"
 
-# ── Titan VM Fleet ─────────────────────────────────────────────────────────────
+# ── Test VM Fleet ─────────────────────────────────────────────────────────────
 
 # One-time: configure CDI to allow insecure pulls from ghost zot (192.168.1.102:5000)
-# Usage: just titan-cdi-patch
-titan-cdi-patch:
+# Usage: just test-vm-cdi-patch
+test-vm-cdi-patch:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -395,9 +466,9 @@ titan-cdi-patch:
       ssh ${KNUCKLE1} '${KBC} apply -f /tmp/cdi-insecure-registry.yaml'"
     echo "✓ CDI insecure registry configured for 192.168.1.102:5000"
 
-# One-time: deploy kvnc-proxy RBAC + titan-dakota VNC proxy
-# Usage: just titan-deploy-proxy
-titan-deploy-proxy:
+# One-time: deploy kvnc-proxy RBAC + test-vm-dakota VNC proxy
+# Usage: just test-vm-deploy-proxy
+test-vm-deploy-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -412,9 +483,9 @@ titan-deploy-proxy:
     ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/titan-dakota-vnc-proxy --timeout=120s'"
     echo "✓ titan-dakota-vnc.default.svc.cluster.local:5900 ready"
 
-# Import titan-dakota disk from ghost zot (takes ~5-10 min)
-# Usage: just titan-create-dakota
-titan-create-dakota:
+# Import test-vm-dakota disk from ghost zot (takes ~5-10 min)
+# Usage: just test-vm-create-dakota
+test-vm-create-dakota:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
@@ -425,29 +496,29 @@ titan-create-dakota:
       ssh ${KNUCKLE1} '${KBC} apply -f /tmp/titan-dakota.yaml'"
     echo "→ DataVolume import started — polling status (may take 5-10 min)..."
     while true; do
-      STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv titan-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
+      STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv test-vm-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
       echo "  DataVolume: ${STATUS}"
       [ "${STATUS}" = "Succeeded" ] && break
       [ "${STATUS}" = "Failed" ] && echo "❌ Import failed" && exit 1
       sleep 15
     done
-    echo "✓ titan-dakota-disk imported"
+    echo "✓ test-vm-dakota-disk imported"
 
-# Re-provision titan-dakota from latest zot image
-# Usage: just titan-reprovision-dakota
-titan-reprovision-dakota:
+# Re-provision test-vm-dakota from latest zot image
+# Usage: just test-vm-reprovision-dakota
+test-vm-reprovision-dakota:
     #!/usr/bin/env bash
     set -euo pipefail
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    echo "→ Stopping titan-dakota..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop titan-dakota -n default 2>/dev/null || true'"
+    echo "→ Stopping test-vm-dakota..."
+    ssh ${GHOST} "ssh ${KNUCKLE1} 'sudo virtctl stop test-vm-dakota -n default 2>/dev/null || true'"
     sleep 5
     echo "→ Deleting old DataVolume..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} delete dv titan-dakota-disk --ignore-not-found'"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} delete dv test-vm-dakota-disk --ignore-not-found'"
     echo "→ Re-importing from 192.168.1.102:5000/dakota:latest..."
-    just titan-create-dakota
+    just test-vm-create-dakota
 
 # Add persistent socat forward on ghost for Guacamole (port 30190 → knuckle-1:30190)
 # Usage: just ghost-add-guac-forward

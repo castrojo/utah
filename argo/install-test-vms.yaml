@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: install-test-vms
+  namespace: argo
+spec:
+  entrypoint: install
+  templates:
+    - name: install
+      script:
+        image: bitnami/kubectl:latest
+        command: [bash]
+        source: |
+          set -euo pipefail
+          echo "→ Applying test VM manifests..."
+          kubectl apply -f /workspace/kubevirt/test-vm-dakota.yaml
+          kubectl apply -f /workspace/kubevirt/test-vm-stable.yaml
+          kubectl apply -f /workspace/kubevirt/test-vm-lts.yaml
+          echo "✓ Test VMs applied"

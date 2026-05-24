@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: install-kubestellar
+  namespace: argo
+spec:
+  entrypoint: install
+  templates:
+    - name: install
+      script:
+        image: bitnami/kubectl:latest
+        command: [bash]
+        source: |
+          set -euo pipefail
+          echo "→ Installing KubeStellar..."
+          bash /workspace/kubestellar/install.sh
+          echo "✓ KubeStellar ready"
