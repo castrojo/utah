@@ -1,7 +1,7 @@
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: titan-stable-disk
+  name: test-vm-stable-disk
   namespace: default
 spec:
   source:
@@ -17,10 +17,10 @@ spec:
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: titan-stable
+  name: test-vm-stable
   namespace: default
   labels:
-    titan: "true"
+    role: test-vm
     variant: stable
 spec:
   runStrategy: Manual
@@ -48,4 +48,4 @@ spec:
       volumes:
         - name: rootdisk
           dataVolume:
-            name: titan-stable-disk
+            name: test-vm-stable-disk

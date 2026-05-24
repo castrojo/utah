@@ -1,7 +1,7 @@
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: titan-lts-disk
+  name: test-vm-lts-disk
   namespace: default
 spec:
   source:
@@ -16,10 +16,10 @@ spec:
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: titan-lts
+  name: test-vm-lts
   namespace: default
   labels:
-    titan: "true"
+    role: test-vm
     variant: lts
 spec:
   runStrategy: Manual
@@ -47,4 +47,4 @@ spec:
       volumes:
         - name: rootdisk
           dataVolume:
-            name: titan-lts-disk
+            name: test-vm-lts-disk
