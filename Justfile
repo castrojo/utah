@@ -204,9 +204,12 @@ install-kubevirt-manager:
     #!/usr/bin/env bash
     set -euo pipefail
     KNUCKLE=core@192.168.122.227
-    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; sudo -E kubectl apply -f https://raw.githubusercontent.com/kubevirt-manager/kubevirt-manager/main/kubernetes/bundled.yaml; sudo -E kubectl -n kubevirt-manager patch svc kubevirt-manager --type=merge --patch '"'"'{"spec":{"type":"NodePort","ports":[{"port":8080,"nodePort":30180}]}}'"'"''"
+    echo "→ Submitting install-kubevirt-manager workflow..."
+    ssh jorge@192.168.1.102 "ssh ${KNUCKLE} \
+      'KUBECONFIG=/etc/rancher/k3s/k3s.yaml \
+       argo submit --from workflowtemplate/install-kubevirt-manager -n argo --watch'"
     ssh jorge@192.168.1.102 "systemctl --user enable --now kubevirt-manager-proxy.service"
-    @echo "✓ KubeVirt Manager → http://192.168.1.102:30180"
+    echo "✓ KubeVirt Manager installed → http://192.168.1.102:30180"
 
 # Start KubeVirt Manager socat proxy (ghost:30180 → knuckle-1:30180)
 kubevirt-manager-proxy-start:
@@ -356,6 +359,7 @@ setup:
     @echo "→ Full cluster setup (Argo must be bootstrapped first)..."
     just install-kubevirt
     just install-cdi
+    just install-kubevirt-manager
     just install-kubestellar-console
     just install-test-vms
     just setup-otel HOST=jorge@192.168.1.102
