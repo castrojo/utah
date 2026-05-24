@@ -29,17 +29,15 @@ otel-status HOST:
     curl -sf "http://${IP}:9090/-/ready" && echo " ✅" || echo " ❌ not ready"
     echo "=== OTel Collector ==="
     curl -sf "http://${IP}:8888/metrics" | grep -c otelcol_process && echo " ✅" || echo " ❌ not ready"
-    echo "=== Perses ==="
-    curl -sf "http://${IP}:8082/api/v1/health" && echo " ✅" || echo " ❌ not ready"
 
 # Tail logs from observability stack on central node
 otel-logs HOST:
-    ssh {{HOST}} "journalctl --user -f -u loki -u prometheus -u otelcol -u perses"
+    ssh {{HOST}} "journalctl --user -f -u loki -u prometheus -u otelcol"
 
 # Stop and remove observability stack
 otel-teardown HOST:
-    ssh {{HOST}} "systemctl --user stop loki prometheus otelcol perses 2>/dev/null || true && \
-                  systemctl --user disable loki prometheus otelcol perses 2>/dev/null || true"
+    ssh {{HOST}} "systemctl --user stop loki prometheus otelcol 2>/dev/null || true && \
+                  systemctl --user disable loki prometheus otelcol 2>/dev/null || true"
     @echo "✓ Observability stack stopped on {{HOST}}"
 
 # ── KubeStellar Console ─────────────────────────────────────────────────────
@@ -312,7 +310,7 @@ setup CENTRAL NODE:
     IP=$(echo "{{CENTRAL}}" | cut -d@ -f2)
     echo ""
     echo "✅ Bluespeed stack deployed"
-    echo "   Perses (dashboards): http://${IP}:8082"
+    echo "   KubeStellar Console (dashboards): http://${IP}:8090"
     echo "   Prometheus (metrics): http://${IP}:9090"
     echo "   Loki (logs):         http://${IP}:3100"
 
