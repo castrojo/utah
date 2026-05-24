@@ -85,20 +85,20 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: titan-dakota-vnc-proxy
+  name: test-vm-dakota-vnc-proxy
   namespace: default
   labels:
-    app: titan-dakota-vnc-proxy
-    titan: "true"
+    app: test-vm-dakota-vnc-proxy
+    role: test-vm
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: titan-dakota-vnc-proxy
+      app: test-vm-dakota-vnc-proxy
   template:
     metadata:
       labels:
-        app: titan-dakota-vnc-proxy
+        app: test-vm-dakota-vnc-proxy
     spec:
       serviceAccountName: kvnc-proxy
       containers:
@@ -110,7 +110,7 @@ spec:
             - pip install -q websockets && python3 /proxy/proxy.py
           env:
             - name: VM_NAME
-              value: titan-dakota
+              value: test-vm-dakota
             - name: VM_NAMESPACE
               value: default
             - name: LISTEN_PORT
@@ -128,13 +128,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: titan-dakota-vnc
+  name: test-vm-dakota-vnc
   namespace: default
   labels:
-    titan: "true"
+    role: test-vm
 spec:
   selector:
-    app: titan-dakota-vnc-proxy
+    app: test-vm-dakota-vnc-proxy
   ports:
     - port: 5900
       targetPort: 5900

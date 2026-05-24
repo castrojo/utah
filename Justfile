@@ -461,14 +461,14 @@ test-vm-deploy-proxy:
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    for f in kvnc-proxy/rbac.yaml kvnc-proxy/titan-dakota-proxy.yaml; do
+    for f in kvnc-proxy/rbac.yaml kvnc-proxy/test-vm-dakota-proxy.yaml; do
       scp "$f" ${GHOST}:/tmp/$(basename $f)
       ssh ${GHOST} "scp /tmp/$(basename $f) ${KNUCKLE1}:/tmp/ && \
         ssh ${KNUCKLE1} '${KBC} apply -f /tmp/$(basename $f)'"
     done
     echo "✓ kvnc-proxy deployed — waiting for proxy pod..."
-    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/titan-dakota-vnc-proxy --timeout=120s'"
-    echo "✓ titan-dakota-vnc.default.svc.cluster.local:5900 ready"
+    ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} wait --for=condition=available deployment/test-vm-dakota-vnc-proxy --timeout=120s'"
+    echo "✓ test-vm-dakota-vnc.default.svc.cluster.local:5900 ready"
 
 # Import test-vm-dakota disk from ghost zot (takes ~5-10 min)
 # Usage: just test-vm-create-dakota
