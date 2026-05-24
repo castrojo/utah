@@ -491,9 +491,9 @@ test-vm-create-dakota:
     GHOST="jorge@192.168.1.102"
     KNUCKLE1="core@192.168.122.227"
     KBC="sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
-    scp kubevirt/titan-dakota.yaml ${GHOST}:/tmp/titan-dakota.yaml
-    ssh ${GHOST} "scp /tmp/titan-dakota.yaml ${KNUCKLE1}:/tmp/ && \
-      ssh ${KNUCKLE1} '${KBC} apply -f /tmp/titan-dakota.yaml'"
+    scp kubevirt/test-vm-dakota.yaml ${GHOST}:/tmp/test-vm-dakota.yaml
+    ssh ${GHOST} "scp /tmp/test-vm-dakota.yaml ${KNUCKLE1}:/tmp/ && \
+      ssh ${KNUCKLE1} '${KBC} apply -f /tmp/test-vm-dakota.yaml'"
     echo "→ DataVolume import started — polling status (may take 5-10 min)..."
     while true; do
       STATUS=$(ssh ${GHOST} "ssh ${KNUCKLE1} '${KBC} get dv test-vm-dakota-disk -o jsonpath={.status.phase} 2>/dev/null || echo Unknown'")
